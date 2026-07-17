@@ -1,4 +1,7 @@
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+# FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+FROM python:3.13-slim-bookworm
+
+RUN pip install --no-cache-dir uv
 
 # Enable bytecode compilation (faster startup)
 ENV UV_COMPILE_BYTECODE=1

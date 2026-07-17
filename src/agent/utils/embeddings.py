@@ -37,6 +37,20 @@ def get_embedding_model(cfg: Config) -> Embeddings:
                 api_key=cfg.openai_api_key or None,
             )
 
+        case "openai-compatible" | "custom":
+            # Generic OpenAI-compatible API (OpenRouter, local vLLM, etc.)
+            # Uses embedding_base_url, embedding_api_key from config
+            from langchain_openai import OpenAIEmbeddings  # noqa: PLC0415
+
+            if not cfg.embedding_base_url:
+                msg = "embedding_base_url is required for 'openai-compatible' provider."
+                raise ValueError(msg)
+            return OpenAIEmbeddings(
+                model=model_name,
+                api_key=cfg.embedding_api_key or None,
+                base_url=cfg.embedding_base_url,
+            )
+
         case _:
             msg = "No suitable embedding Model configured!"
             raise KeyError(msg)

@@ -23,6 +23,16 @@ class Config(BaseSettings):
     embedding_model_name: str = "gemini-embedding-002"
     embedding_size: int = 768
 
+    # Generic OpenAI-compatible embedding config (base_url + api_key + model)
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
+
+    # Generic OpenAI-compatible LLM config (base_url + api_key + model)
+    # Used for ChatLiteLLM or any OpenAI-compatible chat endpoint
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model_name: str = ""
+
     # Reranker Configuration
     rerank_provider: str = "none"  # "cohere", "flashrank", or "none"
     rerank_top_k: int = 5

@@ -1,0 +1,26 @@
+# Các thư viện cần thiết để chạy trực tiếp các script (dump_reader, chunking, migrate_dump_to_qdrant)
+# và chạy test (DeepEval) mà không cần cài đặt toàn bộ web backend/Docker.
+
+# Core tools
+python-dotenv
+loguru
+tqdm
+
+# Database & Vectors
+qdrant-client
+fastembed
+
+# Document Processing & Chunking
+tiktoken
+pymongo  # Cung cấp thư viện bson để đọc file Extended JSON từ Mongo dump
+
+# LangChain components dùng trong script migrate
+langchain-core
+langchain-qdrant
+langchain-openai  # Dùng làm base để gọi LLM/Embedding chuẩn OpenAI API
+langchain-google-genai # Dùng làm fallback gọi Gemini Embedding API chính chủ
+langchain-text-splitters  # Dùng cho MarkdownHeaderTextSplitter trong chunking.py
+
+# Testing / Evaluation
+deepeval
+pytest
