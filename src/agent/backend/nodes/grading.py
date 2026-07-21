@@ -12,36 +12,39 @@ from agent.backend.state import AgentState, Grade
 
 def grade_documents(
     state: AgentState,
-    config: RunnableConfig,
+    config: RunnableConfig,  # noqa: ARG001
     *,
     llm: LanguageModelLike,
-) -> Literal["response_synthesizer", "response_synthesizer_cohere", "rewrite_query"]:
-    """Grade the retrieved documents holistically."""
-    model = llm.with_config(tags=["nostream"])
-    structured_model = model.with_structured_output(Grade)
+) -> Literal["response_synthesizer", "rewrite_query"]:
+    """Grade the retrieved documents holistically.
+
+    Returns either:
+        - "response_synthesizer" if the documents are relevant (or retry limit reached)
+        - "rewrite_query" if the documents are not relevant and we should retry with a rewritten query
+    """
+    from langchain_core.output_parsers import PydanticOutputParser
+
+    model = llm.with_config(stream=False)
+    parser = PydanticOutputParser(pydantic_object=Grade)
 
     prompt = PromptTemplate(
-        template=GRADER_TEMPLATE,
+        template=GRADER_TEMPLATE + "\n\n{format_instructions}",
         input_variables=["documents", "question"],
+        partial_variables={"format_instructions": parser.get_format_instructions()},
     )
-    chain = prompt | structured_model
+    chain = prompt | model | parser
 
-    # Format documents for the grader
     docs_text = "\n\n".join([f"Document {i + 1}:\n{doc.page_content}" for i, doc in enumerate(state["documents"])])
 
-    grade: Grade = chain.invoke({"documents": docs_text, "question": state["query"]})
+    try:
+        grade: Grade = chain.invoke({"documents": docs_text, "question": state["query"]})
+    except Exception as e:
+        import logging
 
-    # If graded as relevant, or we hit max retries, generate
+        logging.warning(f"Failed to parse grade, defaulting to relevant: {e}")
+        grade = Grade(is_relevant=True)
+
     if grade.is_relevant or state.get("retry_count", 0) >= 2:
-        return route_to_response_synthesizer(state, config)
+        return "response_synthesizer"
 
     return "rewrite_query"
-
-
-def route_to_response_synthesizer(state: AgentState, config: RunnableConfig) -> Literal["response_synthesizer", "response_synthesizer_cohere"]:  # noqa: ARG001
-    """Route to the appropriate response synthesizer based on the config."""
-    model_name = config.get("configurable", {}).get("model_name", "gemini")
-    if model_name == "cohere_command":
-        return "response_synthesizer_cohere"
-    else:
-        return "response_synthesizer"

@@ -1,6 +1,6 @@
 """Retrieval nodes for the graph."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 from langchain_core.language_models import LanguageModelLike
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, convert_to_messages
@@ -67,13 +67,3 @@ def retrieve_documents_with_chat_history(state: AgentState, config: RunnableConf
         # If we are looping, we already have a rewritten query in state["query"]
         # So we just use basic retrieval on that
         return retrieve_documents(state, config, cfg=cfg)
-
-
-def rerank_documents(state: AgentState, *, reranker: Callable) -> AgentState:
-    """Rerank retrieved documents to improve relevance."""
-    if not state["documents"]:
-        return state
-
-    reranked_docs = reranker(state["documents"], state["query"])
-    logger.info(f"Reranked documents: {len(state['documents'])} -> {len(reranked_docs)}")
-    return {"documents": reranked_docs}
