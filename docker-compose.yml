@@ -1,67 +1,19 @@
 services:
-  agent:
-    build: .
-    platform: linux/amd64
-    volumes:
-      - ./data:/data
-      - ./logs:/logs
-    depends_on:
-      - qdrant
-      # - streamlit_app
-    ports:
-      - "8001:8001"
-    env_file:
-      - .env
-    environment:
-      - QDRANT_URL=http://qdrant
-      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006/v1/traces
-
-  streamlit_app:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-    platform: linux/amd64
-    depends_on:
-      - agent
-    ports:
-      - "8501:8501"
-    environment:
-      - BACKEND_HOST=agent
-
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: qdrant
-    command: ["./qdrant", "--config-path", "config/qdrant.yaml"]
-    volumes:
-      - ./vector_db:/qdrant/storage
-      - ./config/qdrant.yaml:/qdrant/config/qdrant.yaml
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    logging:
-      driver: "json-file"
-      options:
-        max-file: "1"
-        max-size: "10m"
-    deploy:
-      resources:
-        limits:
-          memory: 2Gb
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/livez"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-# docker-compose.yml
   phoenix:
-    image: arizephoenix/phoenix:latest # Must be greater than 4.0 version to work
+    image: arizephoenix/phoenix:latest
+    container_name: phoenix
+    restart: unless-stopped
     ports:
-      - 6006:6006  # PHOENIX_PORT
-      - 4317:4317  # PHOENIX_GRPC_PORT
-      # - 9090:9090  # [Optional] PROMETHEUS PORT IF ENABLED
-      - 4318:4318  # OTLP HTTP PORT
+      - 6006:6006
+      - 4317:4317
+      - 4318:4318
     environment:
       - PHOENIX_WORKING_DIR=/mnt/data
     volumes:
-      - ./phoenix_data:/mnt/data   # PHOENIX_WORKING_DIR
+      - ./phoenix_data:/mnt/data
+    networks:
+      - test_network
+
+networks:
+  test_network:
+    external: true
