@@ -8,7 +8,7 @@ from agent.utils.config import Config
 def get_embedding_model(cfg: Config) -> Embeddings:
     """Return an embeddings client for the configured provider."""
     provider = cfg.embedding_provider
-    model_name = cfg.embedding_model_name
+    model_name = cfg.embedding_model
 
     match provider:
         case "cohere":
@@ -24,7 +24,7 @@ def get_embedding_model(cfg: Config) -> Embeddings:
                 raise ImportError(msg) from exc
 
             return GoogleGenerativeAIEmbeddings(
-                model=model_name,
+                model=cfg.embedding_model,
                 google_api_key=cfg.gemini_api_key or None,
                 output_dimensionality=cfg.embedding_size,
             )
@@ -40,11 +40,24 @@ def get_embedding_model(cfg: Config) -> Embeddings:
         case "openai-compatible" | "custom":
             # Generic OpenAI-compatible API (OpenRouter, local vLLM, etc.)
             # Uses embedding_base_url, embedding_api_key from config
-            from langchain_openai import OpenAIEmbeddings  # noqa: PLC0415
-
             if not cfg.embedding_base_url:
                 msg = "embedding_base_url is required for 'openai-compatible' provider."
                 raise ValueError(msg)
+                
+            # Fallback cho Gemini API (vì OpenAI compatibility layer của Gemini hiện chưa hỗ trợ /embeddings tốt)
+            if "generativelanguage.googleapis" in cfg.embedding_base_url:
+                try:
+                    from langchain_google_genai import GoogleGenerativeAIEmbeddings  # noqa: PLC0415
+                except ImportError as exc:  # pragma: no cover
+                    msg = "langchain-google-genai is required for Google embeddings."
+                    raise ImportError(msg) from exc
+                
+                return GoogleGenerativeAIEmbeddings(
+                    model=model_name,
+                    google_api_key=cfg.embedding_api_key or None,
+                )
+
+            from langchain_openai import OpenAIEmbeddings  # noqa: PLC0415
             return OpenAIEmbeddings(
                 model=model_name,
                 api_key=cfg.embedding_api_key or None,
