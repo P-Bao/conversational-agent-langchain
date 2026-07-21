@@ -135,3 +135,11 @@ vector_db/
 reports.xlsx
 phoenix_data/
 .aider*
+
+# DeepEval artifacts
+.deepeval/
+deepeval_results.xml
+full-test-results.txt
+test-results.txt
+chunk_checkpoint.jsonl
+migration_checkpoint.jsonl
