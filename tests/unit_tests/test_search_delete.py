@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from inline_snapshot import snapshot
 from qdrant_client.http.models.models import UpdateResult
 
@@ -49,6 +50,8 @@ def test_delete_vector(mock_load_conn, client) -> None:
 @patch("agent.utils.retriever.QdrantVectorStore")
 @patch("agent.utils.retriever.get_embedding_model")
 def test_get_retriever(mock_get_embedding_model, mock_vector_store, _mock_sparse, _mock_client) -> None:
+    from qdrant_client import models
+
     mock_vstore_instance = MagicMock()
     mock_vector_store.return_value = mock_vstore_instance
 
@@ -60,4 +63,47 @@ def test_get_retriever(mock_get_embedding_model, mock_vector_store, _mock_sparse
 
     mock_get_embedding_model.assert_called_once()
     mock_vector_store.assert_called_once()
-    mock_vstore_instance.as_retriever.assert_called_with(search_kwargs={"k": 5})
+    # search_kwargs must include hybrid_fusion (RRF by default) alongside k
+    args, kwargs = mock_vstore_instance.as_retriever.call_args
+    search_kwargs = kwargs["search_kwargs"]
+    assert search_kwargs["k"] == 5
+    assert isinstance(search_kwargs["hybrid_fusion"], models.FusionQuery)
+    assert search_kwargs["hybrid_fusion"].fusion == models.Fusion.RRF
+
+
+@patch("agent.utils.retriever.qdrant_client")
+@patch("agent.utils.retriever.sparse_embeddings")
+@patch("agent.utils.retriever.QdrantVectorStore")
+@patch("agent.utils.retriever.get_embedding_model")
+def test_get_retriever_dbsf(mock_get_embedding_model, mock_vector_store, _mock_sparse, _mock_client) -> None:
+    from qdrant_client import models
+
+    mock_vstore_instance = MagicMock()
+    mock_vector_store.return_value = mock_vstore_instance
+
+    retriever_module._embeddings_cache.clear()
+    retriever_module._vector_store_cache.clear()
+    mock_get_embedding_model.return_value = MagicMock()
+
+    dbsf_cfg = retriever_module.Config(fusion_algorithm="dbsf")
+    get_retriever(k=3, collection_name="my_coll", cfg=dbsf_cfg)
+
+    args, kwargs = mock_vstore_instance.as_retriever.call_args
+    search_kwargs = kwargs["search_kwargs"]
+    assert search_kwargs["k"] == 3
+    assert isinstance(search_kwargs["hybrid_fusion"], models.FusionQuery)
+    assert search_kwargs["hybrid_fusion"].fusion == models.Fusion.DBSF
+
+
+@patch("agent.utils.retriever.qdrant_client")
+@patch("agent.utils.retriever.sparse_embeddings")
+@patch("agent.utils.retriever.QdrantVectorStore")
+@patch("agent.utils.retriever.get_embedding_model")
+def test_get_retriever_invalid_fusion(mock_get_embedding_model, mock_vector_store, _mock_sparse, _mock_client) -> None:
+    retriever_module._embeddings_cache.clear()
+    retriever_module._vector_store_cache.clear()
+    mock_get_embedding_model.return_value = MagicMock()
+
+    bad_cfg = retriever_module.Config(fusion_algorithm="banana")
+    with pytest.raises(ValueError, match="Unknown fusion_algorithm"):
+        get_retriever(k=3, collection_name="my_coll", cfg=bad_cfg)

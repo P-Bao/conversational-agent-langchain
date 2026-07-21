@@ -1,10 +1,15 @@
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.documents import Document
 
-# Patch reranker and retriever before importing Graph to prevent external connections
-with patch("agent.utils.reranker.get_reranker", return_value=lambda docs, query: docs):
+with patch("agent.backend.graph.ChatLiteLLM") as _mock_llm_cls:
+    _mock_llm_cls.return_value = MagicMock()
     from agent.backend.graph import Graph
     from agent.backend.state import AgentState, Grade
 
@@ -12,16 +17,14 @@ with patch("agent.utils.reranker.get_reranker", return_value=lambda docs, query:
 
 @pytest.fixture
 def graph_instance():
-    with patch("agent.backend.graph.get_reranker") as mock_reranker, \
-         patch("agent.backend.graph.ChatCohere") as mock_cohere:
-        mock_reranker.return_value = lambda docs, query: docs
-        mock_cohere.return_value = MagicMock()
+    with patch("agent.backend.graph.ChatLiteLLM") as mock_llm_cls:
+        mock_llm_cls.return_value = MagicMock()
         yield Graph()
 
-from agent.backend.nodes.retrieval import retrieve_documents, retrieve_documents_with_chat_history, rerank_documents, get_chat_history
-from agent.backend.nodes.grading import grade_documents, route_to_response_synthesizer
+from agent.backend.nodes.retrieval import retrieve_documents, retrieve_documents_with_chat_history, get_chat_history
+from agent.backend.nodes.grading import grade_documents
 from agent.backend.nodes.rewrite import rewrite_query
-from agent.backend.nodes.generation import generate_response_default, generate_response_cohere
+from agent.backend.nodes.generation import generate_response_default
 
 def test_route_to_retriever_single_message(graph_instance):
     state = {"messages": [HumanMessage(content="hi")]}
@@ -45,14 +48,11 @@ def test_get_chat_history(graph_instance):
     assert history[1]["role"] == "ai"
 
 def test_route_to_response_synthesizer_default(graph_instance):
-    config = {"configurable": {"model_name": "openai_gpt_3_5_turbo"}}
-    result = route_to_response_synthesizer({}, config)
-    assert result == "response_synthesizer"
+    # route_to_response_synthesizer was removed in commit 938772f; routing is now done by grade_documents.
+    pytest.skip("route_to_response_synthesizer removed in refactor #157")
 
 def test_route_to_response_synthesizer_cohere(graph_instance):
-    config = {"configurable": {"model_name": "cohere_command"}}
-    result = route_to_response_synthesizer({}, config)
-    assert result == "response_synthesizer_cohere"
+    pytest.skip("route_to_response_synthesizer removed in refactor #157")
 
 @patch("agent.backend.nodes.retrieval.get_retriever")
 def test_retrieve_documents(mock_get_retriever, graph_instance):
@@ -138,49 +138,44 @@ def test_retrieve_documents_with_chat_history(mock_get_retriever, graph_instance
 
 
 def test_grade_documents(graph_instance):
-    # Mock the LLM and structured output
+    # grade_documents builds: chain = prompt | model | parser
+    # chain.invoke(...) returns a Grade. We mock prompt | model to be a MagicMock
+    # whose __or__ returns the same chain so .invoke is controllable.
     graph_instance.llm = MagicMock()
-    mock_structured_model = MagicMock()
-    # We need to mock the with_config return value to return the model itself or a mock that has with_structured_output
-    mock_model_with_config = MagicMock()
-    graph_instance.llm.with_config.return_value = mock_model_with_config
-    mock_model_with_config.with_structured_output.return_value = mock_structured_model
 
-    # Mock the chain
     mock_chain = MagicMock()
-    # We need to mock the prompt | structured_model chain
-    # Since we can't easily mock the pipe of a locally created PromptTemplate,
-    # we will patch PromptTemplate to return a mock that supports piping
 
-    with patch("agent.backend.nodes.grading.PromptTemplate") as mock_prompt_cls:
+    with patch("agent.backend.nodes.grading.PromptTemplate") as mock_prompt_cls, \
+         patch("langchain_core.output_parsers.PydanticOutputParser") as mock_parser_cls:
         mock_prompt_instance = MagicMock()
         mock_prompt_cls.return_value = mock_prompt_instance
+        mock_parser_cls.return_value = MagicMock()
 
+        # prompt | model -> mock_chain
         mock_prompt_instance.__or__.return_value = mock_chain
+        # mock_chain | parser -> mock_chain (same object, so .invoke stays controllable)
+        mock_chain.__or__.return_value = mock_chain
 
-        # Case 1: Relevant documents
-        mock_chain.invoke.return_value = Grade(is_relevant=True)
         state = {
             "documents": [Document(page_content="doc1")],
             "query": "test query",
-            "retry_count": 0
+            "retry_count": 0,
         }
         config = {"configurable": {"model_name": "gemini"}}
 
-        result = grade_documents(state, config, llm=graph_instance.llm)
-        assert result == "response_synthesizer"
+        # Case 1: Relevant documents
+        mock_chain.invoke.return_value = Grade(is_relevant=True)
+        assert grade_documents(state, config, llm=graph_instance.llm) == "response_synthesizer"
 
-        # Case 2: Irrelevant documents
+        # Case 2: Irrelevant documents, retry_count = 0 -> rewrite
         mock_chain.invoke.return_value = Grade(is_relevant=False)
         state["retry_count"] = 0
-        result = grade_documents(state, config, llm=graph_instance.llm)
-        assert result == "rewrite_query"
+        assert grade_documents(state, config, llm=graph_instance.llm) == "rewrite_query"
 
-        # Case 3: Irrelevant documents but max retries reached
+        # Case 3: Irrelevant documents but max retries reached -> response_synthesizer
         mock_chain.invoke.return_value = Grade(is_relevant=False)
         state["retry_count"] = 2
-        result = grade_documents(state, config, llm=graph_instance.llm)
-        assert result == "response_synthesizer"
+        assert grade_documents(state, config, llm=graph_instance.llm) == "response_synthesizer"
 
 
 def test_rewrite_query(graph_instance):
@@ -227,60 +222,13 @@ def test_generate_response(graph_instance):
     # Mock the LLM
     graph_instance.llm = MagicMock()
 
-    # Mock the chain
-    mock_chain = MagicMock()
+    state = {
+        "query": "test query",
+        "documents": [Document(page_content="doc1")],
+        "messages": [HumanMessage(content="test query")]
+    }
 
-    with patch("agent.backend.nodes.generation.ChatPromptTemplate.from_messages") as mock_prompt_cls:
-        mock_prompt_instance = MagicMock()
-        mock_prompt_cls.return_value = mock_prompt_instance
-
-        # Chain: prompt | model
-        mock_chain_step1 = MagicMock()
-        mock_prompt_instance.__or__.return_value = mock_chain_step1
-
-        mock_chain_step1.invoke.return_value = AIMessage(content="synthesized response")
-
-        state = {
-            "query": "test query",
-            "documents": [Document(page_content="doc1")],
-            "messages": [HumanMessage(content="test query")]
-        }
-
-        # Test generate_response_default
-        result = generate_response_default(state, llm=graph_instance.llm)
-        assert len(result["messages"]) == 1
-        assert result["messages"][0].content == "synthesized response"
-
-        # Test generate_response_cohere
-        # We need to mock the bind method
-        mock_bound_model = MagicMock()
-        graph_instance.llm.bind.return_value = mock_bound_model
-        mock_prompt_instance.__or__.return_value = mock_chain # Reset chain return for new call
-        mock_chain.invoke.return_value = AIMessage(content="cohere response")
-
-        # Note: generate_response_cohere calls generate_response which constructs a NEW chain
-        # So we need to ensure our mocks work for the second call too.
-        # The prompt template is different, but we mocked the class so it returns the same mock instance.
-
-        result = generate_response_cohere(state, cohere_llm=graph_instance.cohere_llm, llm=graph_instance.llm)
-        assert len(result["messages"]) == 1
-        # Since we mocked the chain invoke to return "synthesized response" initially,
-        # and we didn't change what mock_chain_step1.invoke returns, it will still be "synthesized response"
-        # unless we update it.
-        # However, generate_response_cohere uses `model` which is `self.llm.bind(...)`.
-        # So `prompt | model` will use the bound model.
-        # `mock_prompt_instance | mock_bound_model` -> mock_chain_cohere
-
-        mock_chain_cohere = MagicMock()
-        mock_prompt_instance.__or__.side_effect = [mock_chain_step1, mock_chain_cohere]
-        mock_chain_cohere.invoke.return_value = AIMessage(content="cohere response")
-
-        # We need to reset the side_effect or re-run the default test first to set it up correctly.
-        # Let's just mock the invoke return value to be dynamic or just check it returns an AIMessage.
-
-    # Re-doing the test with cleaner separation
-
-    # Test Default
+    # Test generate_response_default only. generate_response_cohere was removed in refactor #157.
     with patch("agent.backend.nodes.generation.ChatPromptTemplate.from_messages") as mock_prompt_cls:
         mock_prompt_instance = MagicMock()
         mock_prompt_cls.return_value = mock_prompt_instance
@@ -291,29 +239,6 @@ def test_generate_response(graph_instance):
 
         result = generate_response_default(state, llm=graph_instance.llm)
         assert result["messages"][0].content == "default response"
-
-    # Test Cohere (now uses ChatCohere directly with documents passed to invoke)
-    with patch("agent.backend.nodes.generation.ChatPromptTemplate.from_messages") as mock_prompt_cls:
-        mock_prompt_instance = MagicMock()
-        mock_prompt_cls.return_value = mock_prompt_instance
-
-        # Mock the cohere_llm
-        mock_cohere_llm = MagicMock()
-        graph_instance.cohere_llm = mock_cohere_llm
-
-        mock_chain = MagicMock()
-        mock_prompt_instance.__or__.return_value = mock_chain
-        mock_chain.invoke.return_value = AIMessage(content="cohere response")
-
-        result = generate_response_cohere(state, cohere_llm=graph_instance.cohere_llm, llm=graph_instance.llm)
-        assert result["messages"][0].content == "cohere response"
-
-        # Verify documents were passed in Cohere's expected format
-        call_args = mock_chain.invoke.call_args
-        assert "documents" in call_args.kwargs
-        docs = call_args.kwargs["documents"]
-        assert len(docs) == 1
-        assert docs[0]["text"] == "doc1"
 
 # --- Tests for RAG Routes ---
 
