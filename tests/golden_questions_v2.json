@@ -1,0 +1,132 @@
+[
+  {
+    "id": 1,
+    "topic": "organization",
+    "question": "Địa chỉ của Hội đồng Học viện là gì?",
+    "expected_context": [
+      "Hội đồng Học viện có địa chỉ tại Học viện Công nghệ Bưu chính Viễn thông, 96A, Đường Trần Phú, Phường Hà Đông, TP. Hà Nội"
+    ],
+    "expected_chunk_locators": []
+  },
+  {
+    "id": 2,
+    "topic": "organization",
+    "question": "Khoa An toàn thông tin sử dụng email gì?",
+    "expected_context": [
+      "Khoa An toàn thông tin sử dụng email attt@ptit.edu.vn"
+    ],
+    "expected_chunk_locators": []
+  },
+  {
+    "id": 3,
+    "topic": "organization",
+    "question": "Viện CNTT và Truyền thông CDIT có website gì?",
+    "expected_context": [
+      "Viện CNTT và Truyền thông CDIT có website là https://cdit.ptit.edu.vn/"
+    ],
+    "expected_chunk_locators": []
+  },
+  {
+    "id": 4,
+    "topic": "users_keycloak",
+    "question": "Tên người dùng có email baopv.b23kh006@stu.ptit.edu.vn là gì?",
+    "expected_context": [
+      "Tên người dùng có email baopv.b23kh006@stu.ptit.edu.vn là Bảo Phan Việt"
+    ],
+    "expected_chunk_locators": []
+  },
+  {
+    "id": 5,
+    "topic": "users_keycloak",
+    "question": "Người dùng Bảo Phan Việt có vai trò (role) gì và có phải quản trị viên không?",
+    "expected_context": [
+      "Bảo Phan Việt có các vai trò realm_access_roles là HOC_VIEN",
+      "Bảo Phan Việt có isAdmin là true"
+    ],
+    "expected_chunk_locators": []
+  },
+  {
+    "id": 6,
+    "topic": "aiot",
+    "question": "Chương trình Trí tuệ nhân tạo vạn vật (AIoT) bắt đầu tuyển sinh từ năm nào và chỉ tiêu là bao nhiêu?",
+    "expected_context": [
+      "Học viện Công nghệ Bưu chính Viễn thông đã có bước đi tiên phong khi mở Chương trình giáo dục Đại học \"Trí tuệ nhân tạo vạn vật\" từ mùa tuyển sinh năm 2025.",
+      "Trong năm 2025, Học viện sẽ tuyển sinh 80 chỉ tiêu cho chương trình AIoT."
+    ],
+    "expected_chunk_locators": []
+  },
+  {
+    "id": 7,
+    "topic": "aiot",
+    "question": "Mô hình AIoT khác biệt thế nào so với mô hình truyền thống phụ thuộc đám mây?",
+    "expected_context": [
+      "Khác với mô hình truyền thống phụ thuộc vào điện toán đám mây, AIoT tập trung vào xử lý dữ liệu tại biên (edge), cho phép thiết bị tự phân tích và đưa ra quyết định ngay tại nguồn phát sinh dữ liệu. Điều này giảm thiểu độ trễ, tiết kiệm băng thông và nâng cao tính bảo mật."
+    ],
+    "expected_chunk_locators": []
+  },
+  {
+    "id": 8,
+    "topic": "aiot",
+    "question": "Sinh viên tốt nghiệp ngành AIoT có thể đảm nhận những vị trí việc làm cụ thể nào?",
+    "expected_context": [
+      "Tại các vị trí cụ thể như: Kiến trúc sư hệ thống AIoT; Kỹ sư xử lý dữ liệu AIoT; Kỹ sư an toàn thông tin AIoT; Kỹ sư phát triển sản phẩm AIoT."
+    ],
+    "expected_chunk_locators": []
+  },
+  {
+    "id": 9,
+    "topic": "attt_curriculum",
+    "question": "Mã ngành và thời gian đào tạo của chương trình An toàn thông tin là gì?",
+    "expected_context": [
+      "Ngành An toàn thông tin Mã ngành 7480202 Thời gian 4,5 năm"
+    ],
+    "expected_chunk_locators": []
+  },
+  {
+    "id": 10,
+    "topic": "attt_curriculum",
+    "question": "Sinh viên chương trình An toàn thông tin CLC cần đạt trình độ tiếng Anh tối thiểu nào?",
+    "expected_context": [
+      "Đạt trình độ tiếng Anh tối thiểu TOEFL iBT 70 điểm hoặc IELTS 6,0 điểm trở lên hoặc tương đương."
+    ],
+    "expected_chunk_locators": []
+  },
+  {
+    "id": 11,
+    "topic": "attt_curriculum",
+    "question": "Trình bày ngắn gọn các chỉ báo PI5,1 đến PI5,3 của chuẩn đầu ra số 5 trong chương trình ATTT CLC.",
+    "expected_context": [
+      "PI5,1: Nhận dạng các rủi ro và các mối đe dọa bảo mật đối với hoạt động của hệ thống.",
+      "PI5,2: Lựa chọn kỹ thuật, công nghệ và công cụ bảo mật phù hợp để khắc chế / giảm thiểu rủi ro và mối đe dọa đối với hệ thống.",
+      "PI5,3: Triển khai kỹ thuật, công nghệ và công cụ khắc chế / giảm thiểu rủi ro và mối đe dọa đã lựa chọn để duy trì hoạt động của hệ thống."
+    ],
+    "expected_chunk_locators": []
+  },
+  {
+    "id": 12,
+    "topic": "attt_admissions",
+    "question": "Khối lượng chương trình đào tạo của ngành An toàn thông tin hệ đại trà là bao nhiêu tín chỉ?",
+    "expected_context": [
+      "Khối lượng chương trình: 150 tín chỉ (không bao gồm Giáo dục thể chất, Giáo dục quốc phòng và Kỹ năng mềm)"
+    ],
+    "expected_chunk_locators": []
+  },
+  {
+    "id": 13,
+    "topic": "attt_admissions",
+    "question": "Lộ trình tăng học phí tối đa của ngành An toàn thông tin là bao nhiêu phần trăm mỗi năm?",
+    "expected_context": [
+      "đảm bảo tỷ lệ tăng không quá 15%/năm (theo Nghị định 81/2021/NĐ-CP của Chính phủ)."
+    ],
+    "expected_chunk_locators": []
+  },
+  {
+    "id": 14,
+    "topic": "all_programs",
+    "question": "Sau khi tốt nghiệp ngành An toàn thông tin, sinh viên có thể đảm nhận các vị trí việc làm kỹ thuật nào? Hãy liệt kê.",
+    "expected_context": [
+      "1. Quản trị bảo mật máy chủ và mạng 2. Bảo mật hệ điều hành và cơ sở dữ liệu 3. Phân tích, tư vấn, thiết kế hệ thống thông tin đảm bảo an toàn 4. Kiểm tra, đánh giá an toàn thông tin cho mạng và hệ thống 5. Rà quét lỗ hổng, điểm yếu và xử lý sự cố an toàn thông tin 6. Lập trình và phát triển ứng dụng đảm bảo an toàn thông tin"
+    ],
+    "expected_chunk_locators": []
+  }
+]

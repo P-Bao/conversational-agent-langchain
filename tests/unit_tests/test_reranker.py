@@ -85,3 +85,53 @@ def test_rerank_with_flashrank_empty_docs():
     """Test rerank_with_flashrank handles empty documents."""
     result = rerank_with_flashrank([], "query", top_k=3)
     assert result == []
+
+
+@patch("agent.utils.reranker._get_bge_reranker")
+def test_rerank_with_bge(mock_get_bge_reranker):
+    """Test rerank_with_bge calls FlagReranker and sorts by score."""
+    from agent.utils.reranker import rerank_with_bge
+
+    mock_reranker = MagicMock()
+    mock_get_bge_reranker.return_value = mock_reranker
+    mock_reranker.compute_score.return_value = [0.2, 0.9, 0.5]
+
+    docs = [
+        Document(page_content="doc0"),
+        Document(page_content="doc1"),
+        Document(page_content="doc2"),
+    ]
+
+    result = rerank_with_bge(docs, "query", top_k=2)
+
+    assert len(result) == 2
+    # Highest score (doc1, score 0.9) should be first, then doc2 (0.5)
+    assert result[0].page_content == "doc1"
+    assert result[1].page_content == "doc2"
+
+
+@patch("agent.utils.reranker._get_bge_reranker")
+def test_rerank_preserves_order(mock_get_bge_reranker):
+    """Test rerank preserves exact sorted order without shuffling."""
+    from agent.utils.reranker import rerank_with_bge
+
+    mock_reranker = MagicMock()
+    mock_get_bge_reranker.return_value = mock_reranker
+    mock_reranker.compute_score.return_value = [0.1, 0.8, 0.6, 0.9]
+
+    docs = [
+        Document(page_content="d0"),
+        Document(page_content="d1"),
+        Document(page_content="d2"),
+        Document(page_content="d3"),
+    ]
+
+    result = rerank_with_bge(docs, "q", top_k=4)
+    contents = [d.page_content for d in result]
+    assert contents == ["d3", "d1", "d2", "d0"]
+
+
+def test_get_reranker_bge():
+    """Test get_reranker with default 'bge' provider."""
+    reranker_fn = get_reranker(provider="bge", top_k=2)
+    assert callable(reranker_fn)

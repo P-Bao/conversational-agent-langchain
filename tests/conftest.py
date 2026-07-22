@@ -47,11 +47,11 @@ def anyio_backend() -> Literal["asyncio"]:
 
 @pytest.fixture(autouse=True, scope="session")
 def test_env_defaults() -> None:
-    os.environ.setdefault("AZURE_OPENAI_ENDPOINT", "https://dummy.openai.azure.com/")
-    os.environ.setdefault("AZURE_OPENAI_API_KEY", "dummy_key")
-    os.environ.setdefault("OPENAI_API_KEY", "dummy_key")
-    os.environ.setdefault("COHERE_API_KEY", "dummy_key")
-    os.environ.setdefault("GEMINI_API_KEY", "dummy_key")
+    os.environ.setdefault("AU_EMBED_MODEL_NAME", "BAAI/bge-m3")
+    os.environ.setdefault("AU_EMBED_DIMENSION", "1024")
+    os.environ.setdefault("AU_SPARSE_MODEL_NAME", "BAAI/bge-m3")
+    os.environ.setdefault("AU_RERANK_MODEL_NAME", "BAAI/bge-reranker-v2-m3")
+    os.environ.setdefault("RERANK_PROVIDER", "bge")
     os.environ.setdefault("QDRANT_URL", "http://localhost")
     os.environ.setdefault("QDRANT_PORT", "6333")
     os.environ.setdefault("QDRANT_API_KEY", "test_api_key")
@@ -89,7 +89,11 @@ def block_external_http(monkeypatch: pytest.MonkeyPatch, request: pytest.Fixture
 
     Set `ALLOW_NETWORK_TESTS=1` to bypass this guard.
     """
-    if os.getenv("ALLOW_NETWORK_TESTS") == "1" or request.node.get_closest_marker("vcr"):
+    if (
+        os.getenv("ALLOW_NETWORK_TESTS") == "1"
+        or request.node.get_closest_marker("vcr")
+        or request.node.get_closest_marker("qwen")
+    ):
         return
 
     import httpx
@@ -126,10 +130,6 @@ def app() -> Iterator[FastAPI]:
     """Import the FastAPI app with expensive startup side effects patched out."""
     with ExitStack() as stack:
         stack.enter_context(patch("agent.utils.vdb.initialize_all_vector_dbs", return_value=None))
-        stack.enter_context(patch("phoenix.otel.register", return_value=None))
-        stack.enter_context(
-            patch("openinference.instrumentation.langchain.LangChainInstrumentor.instrument", return_value=None)
-        )
 
         module = importlib.import_module("agent.api")
         yield module.app

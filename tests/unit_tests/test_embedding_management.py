@@ -6,8 +6,8 @@ from langchain_core.documents import Document
 @pytest.fixture
 def mock_config():
     with patch("agent.backend.services.embedding_management.config") as mock_cfg:
-        mock_cfg.embedding_provider = "cohere"
-        mock_cfg.embedding_model_name = "embed-english-v3.0"
+        mock_cfg.embedding_provider = "bge"
+        mock_cfg.embedding_model = "BAAI/bge-m3"
         mock_cfg.embedding_size = 1024
         yield mock_cfg
 
@@ -36,7 +36,7 @@ def test_init_success(mock_config, mock_init_vdb, mock_get_embedding_model):
 def test_init_invalid_provider(mock_config):
     mock_config.embedding_provider = "unknown_provider"
 
-    with pytest.raises(KeyError, match="No suitable embedding Model configured!"):
+    with pytest.raises(KeyError, match="No suitable embedding Model configured"):
         EmbeddingManagement(collection_name="test_collection")
 
 @patch("agent.backend.services.embedding_management.DirectoryLoader")

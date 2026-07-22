@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -46,7 +51,7 @@ def test_delete_vector(mock_load_conn, client) -> None:
 
 
 @patch("agent.utils.retriever.qdrant_client")
-@patch("agent.utils.retriever.sparse_embeddings")
+@patch("agent.utils.retriever.get_sparse_embedding")
 @patch("agent.utils.retriever.QdrantVectorStore")
 @patch("agent.utils.retriever.get_embedding_model")
 def test_get_retriever(mock_get_embedding_model, mock_vector_store, _mock_sparse, _mock_client) -> None:
@@ -56,6 +61,7 @@ def test_get_retriever(mock_get_embedding_model, mock_vector_store, _mock_sparse
     mock_vector_store.return_value = mock_vstore_instance
 
     retriever_module._embeddings_cache.clear()
+    retriever_module._sparse_embeddings_cache.clear()
     retriever_module._vector_store_cache.clear()
     mock_get_embedding_model.return_value = MagicMock()
 
@@ -63,7 +69,6 @@ def test_get_retriever(mock_get_embedding_model, mock_vector_store, _mock_sparse
 
     mock_get_embedding_model.assert_called_once()
     mock_vector_store.assert_called_once()
-    # search_kwargs must include hybrid_fusion (RRF by default) alongside k
     args, kwargs = mock_vstore_instance.as_retriever.call_args
     search_kwargs = kwargs["search_kwargs"]
     assert search_kwargs["k"] == 5
@@ -72,7 +77,7 @@ def test_get_retriever(mock_get_embedding_model, mock_vector_store, _mock_sparse
 
 
 @patch("agent.utils.retriever.qdrant_client")
-@patch("agent.utils.retriever.sparse_embeddings")
+@patch("agent.utils.retriever.get_sparse_embedding")
 @patch("agent.utils.retriever.QdrantVectorStore")
 @patch("agent.utils.retriever.get_embedding_model")
 def test_get_retriever_dbsf(mock_get_embedding_model, mock_vector_store, _mock_sparse, _mock_client) -> None:
@@ -82,6 +87,7 @@ def test_get_retriever_dbsf(mock_get_embedding_model, mock_vector_store, _mock_s
     mock_vector_store.return_value = mock_vstore_instance
 
     retriever_module._embeddings_cache.clear()
+    retriever_module._sparse_embeddings_cache.clear()
     retriever_module._vector_store_cache.clear()
     mock_get_embedding_model.return_value = MagicMock()
 
@@ -96,11 +102,12 @@ def test_get_retriever_dbsf(mock_get_embedding_model, mock_vector_store, _mock_s
 
 
 @patch("agent.utils.retriever.qdrant_client")
-@patch("agent.utils.retriever.sparse_embeddings")
+@patch("agent.utils.retriever.get_sparse_embedding")
 @patch("agent.utils.retriever.QdrantVectorStore")
 @patch("agent.utils.retriever.get_embedding_model")
 def test_get_retriever_invalid_fusion(mock_get_embedding_model, mock_vector_store, _mock_sparse, _mock_client) -> None:
     retriever_module._embeddings_cache.clear()
+    retriever_module._sparse_embeddings_cache.clear()
     retriever_module._vector_store_cache.clear()
     mock_get_embedding_model.return_value = MagicMock()
 
