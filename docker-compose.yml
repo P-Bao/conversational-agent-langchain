@@ -1,19 +1,22 @@
 services:
-  phoenix:
-    image: arizephoenix/phoenix:latest
-    container_name: phoenix
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: conversational-rag-api
     restart: unless-stopped
     ports:
-      - 6006:6006
-      - 4317:4317
-      - 4318:4318
+      - "8001:8001"
+    env_file:
+      - .env
     environment:
-      - PHOENIX_WORKING_DIR=/mnt/data
+      - QDRANT_URL=${QDRANT_URL:-http://host.docker.internal}
+      - QDRANT_PORT=${QDRANT_PORT:-6333}
     volumes:
-      - ./phoenix_data:/mnt/data
-    networks:
-      - test_network
+      - hf_cache:/root/.cache/huggingface
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
-networks:
-  test_network:
-    external: true
+volumes:
+  hf_cache:
+    name: bge_hf_cache
