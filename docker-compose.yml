@@ -10,13 +10,19 @@ services:
     env_file:
       - .env
     environment:
-      - QDRANT_URL=${QDRANT_URL:-http://host.docker.internal}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant}
       - QDRANT_PORT=${QDRANT_PORT:-6333}
     volumes:
       - hf_cache:/root/.cache/huggingface
+    networks:
+      - test_network
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
 volumes:
   hf_cache:
     name: bge_hf_cache
+
+networks:
+  test_network:
+    external: true
