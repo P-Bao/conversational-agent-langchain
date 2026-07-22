@@ -5,29 +5,32 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Config(BaseSettings):
-    """Loading the settings with pydantic."""
+    """Loading the settings with pydantic.
+
+    Retrieval-only configuration: BGE-m3 cho dense + sparse (env tách), BGE reranker v2-m3,
+    không còn LLM generation. Eval LLM (DeepEval) tách config riêng trong test scope.
+    """
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # === Gemini API ===
-    gemini_api_key: str = ""
-
-    # === Generation Model (Gemini via LiteLLM) ===
-    generation_model: str = "gemini/gemini-2.5-flash"
-
-    # === Embedding Model (Gemini embedding) ===
-    embedding_model: str = "gemini-embedding-002"
-    embedding_size: int = 3072
-
-    # === Generic OpenAI-compatible LLM config (optional, used by LiteLLM) ===
-    llm_base_url: str = ""
-    llm_api_key: str = ""
-    llm_model_name: str = ""
-
-    # === Embedding provider config (optional) ===
-    embedding_provider: str = "google"
+    # === Dense embedding (BGE-m3) ===
+    embedding_provider: str = "bge"
+    embedding_model: str = Field(
+        default="BAAI/bge-m3",
+        validation_alias=AliasChoices("embedding_model", "EMBEDDING_MODEL", "AU_EMBED_MODEL_NAME", "AU_EMBED_MODEL"),
+    )
+    embedding_size: int = Field(
+        default=1024,
+        validation_alias=AliasChoices("embedding_size", "EMBEDDING_SIZE", "AU_EMBED_DIMENSION"),
+    )
     embedding_base_url: str = ""
     embedding_api_key: str = ""
+
+    # === Sparse embedding (BGE-m3 — cùng model nhưng env tách để swap linh hoạt) ===
+    sparse_model: str = Field(
+        default="BAAI/bge-m3",
+        validation_alias=AliasChoices("sparse_model", "SPARSE_MODEL", "AU_SPARSE_MODEL_NAME", "AU_SPARSE_MODEL"),
+    )
 
     # === Qdrant Collection ===
     qdrant_collection_name: str = Field(
@@ -35,20 +38,18 @@ class Config(BaseSettings):
         validation_alias=AliasChoices("qdrant_collection", "QDRANT_COLLECTION", "qdrant_collection_name"),
     )
 
-    # === Unused but kept for backward-compat ===
-    openai_api_type: str = "openai"
-    azure_openai_endpoint: str = ""
-    azure_openai_api_key: str = ""
+    # === Backward-compat (giữ cho script migration + test cũ) ===
     openai_api_key: str = ""
-    openai_api_version: str = "2024-02-15-preview"
     cohere_api_key: str = ""
-    cohere_model_name: str = "command-r-plus"
 
-    # === Reranker Configuration (DISABLED - using RRF only) ===
-    rerank_provider: str = "none"
+    # === Reranker (BGE-reranker v2-m3) ===
+    rerank_provider: str = "bge"
     rerank_base_url: str = ""
     rerank_api_key: str = ""
-    rerank_model: str = ""
+    rerank_model: str = Field(
+        default="BAAI/bge-reranker-v2-m3",
+        validation_alias=AliasChoices("rerank_model", "RERANK_MODEL", "AU_RERANK_MODEL_NAME", "AU_RERANK_MODEL"),
+    )
     rerank_top_k: int = 5
 
     # === Retrieval Configuration ===
@@ -63,18 +64,14 @@ class Config(BaseSettings):
     rrf_k: int = Field(default=60, validation_alias=AliasChoices("rrf_k", "RRF_K"))
     dbsf_window: int = Field(default=1000, validation_alias=AliasChoices("dbsf_window", "DBSF_WINDOW"))
 
-    # === QDRANT (no auth, matches qdrant_docker default config) ===
+    # === QDRANT ===
     qdrant_url: str = "http://localhost"
     qdrant_api_key: str | None = Field(default=None, validation_alias=AliasChoices("qdrant_api_key", "qdrant_cloud_api_key"))
     qdrant_port: int = 6333
     qdrant_prefer_grpc: bool = False
 
-    # === Tracing ===
-    phoenix_collector_endpoint: str = "http://localhost:6006/v1/traces"
-
-    # === Backward-compat aliases ===
-    model_name: str = Field(default="gemini/gemini-2.5-flash")
-    embedding_model_name: str = Field(default="gemini-embedding-002")
+    # === Sparse vector name (đổi từ fast-sparse-bm25 → bge-m3-sparse) ===
+    sparse_vector_name: str = "bge-m3-sparse"
 
 
 config = Config()

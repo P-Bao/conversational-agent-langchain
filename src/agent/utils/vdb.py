@@ -3,15 +3,15 @@
 import warnings
 
 from langchain_core.embeddings import Embeddings
-from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode
+from langchain_qdrant import QdrantVectorStore, RetrievalMode
 from loguru import logger
 from qdrant_client import AsyncQdrantClient, QdrantClient, models
 
 from agent.utils.config import Config
-
-sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
+from agent.utils.embeddings import get_sparse_embedding
 
 settings = Config()
+sparse_embeddings = get_sparse_embedding(settings)
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=UserWarning, message="Api key is used with an insecure connection")
@@ -33,18 +33,7 @@ with warnings.catch_warnings():
 
 
 def init_vdb(collection_name: str, embedding: Embeddings) -> QdrantVectorStore:
-    """Establish a connection to the Qdrant DB.
-
-    Args:
-    ----
-        collection_name (str): name of the collection in the Qdrant DB.
-        embedding (Embeddings): Embedding Type.
-
-    Returns:
-    -------
-        Qdrant: Established Connection to the Vector DB including Embeddings.
-
-    """
+    """Establish a connection to the Qdrant DB."""
     logger.info(f"USING COLLECTION: {collection_name}")
 
     vector_db = QdrantVectorStore(
@@ -53,7 +42,7 @@ def init_vdb(collection_name: str, embedding: Embeddings) -> QdrantVectorStore:
         embedding=embedding,
         sparse_embedding=sparse_embeddings,
         retrieval_mode=RetrievalMode.HYBRID,
-        sparse_vector_name="fast-sparse-bm25",
+        sparse_vector_name=settings.sparse_vector_name,
     )
     logger.info("SUCCESS: Qdrant DB initialized.")
 
@@ -61,36 +50,17 @@ def init_vdb(collection_name: str, embedding: Embeddings) -> QdrantVectorStore:
 
 
 def load_vec_db_conn() -> QdrantClient:
-    """Return the module-level synchronous QdrantClient singleton.
-
-    Returns
-    -------
-        QdrantClient: The shared QdrantClient instance.
-
-    """
+    """Return the module-level synchronous QdrantClient singleton."""
     return qdrant_client
 
 
 def get_async_qdrant_client() -> AsyncQdrantClient:
-    """Return the module-level asynchronous QdrantClient singleton.
-
-    Returns
-    -------
-        AsyncQdrantClient: The shared AsyncQdrantClient instance.
-
-    """
+    """Return the module-level asynchronous QdrantClient singleton."""
     return async_qdrant_client
 
 
 def initialize_vector_db(collection_name: str, embeddings_size: int) -> None:
-    """Initializes the vector db for a given backend.
-
-    Args:
-    ----
-        collection_name (str): Name of the Collection
-        embeddings_size (int): Size of the Embeddings
-
-    """
+    """Initializes the vector db for a given backend."""
     client = load_vec_db_conn()
     if client.collection_exists(collection_name=collection_name):
         logger.info(f"SUCCESS: Collection {collection_name} already exists.")
@@ -99,33 +69,22 @@ def initialize_vector_db(collection_name: str, embeddings_size: int) -> None:
 
 
 def generate_collection(collection_name: str, embeddings_size: int) -> None:
-    """Generate a collection for a given backend.
-
-    Args:
-    ----
-        collection_name (str): Name of the Collection
-        embeddings_size (int): Size of the Embeddings
-
-    """
+    """Generate a collection for a given backend."""
     client = load_vec_db_conn()
-    client.set_sparse_model(embedding_model_name="Qdrant/bm25")
     client.create_collection(
         collection_name=collection_name,
         vectors_config=models.VectorParams(size=embeddings_size, distance=models.Distance.COSINE),
-        sparse_vectors_config=client.get_fastembed_sparse_vector_params(),
+        sparse_vectors_config={
+            settings.sparse_vector_name: models.SparseVectorParams(
+                index=models.SparseIndexParams(on_disk=False)
+            )
+        },
     )
     logger.info(f"SUCCESS: Collection {collection_name} created.")
 
 
 async def initialize_vector_db_async(collection_name: str, embeddings_size: int) -> None:
-    """Initializes the vector db for a given backend asynchronously.
-
-    Args:
-    ----
-        collection_name (str): Name of the Collection
-        embeddings_size (int): Size of the Embeddings
-
-    """
+    """Initializes the vector db for a given backend asynchronously."""
     client = get_async_qdrant_client()
     if await client.collection_exists(collection_name=collection_name):
         logger.info(f"SUCCESS: Collection {collection_name} already exists.")
@@ -134,20 +93,16 @@ async def initialize_vector_db_async(collection_name: str, embeddings_size: int)
 
 
 async def generate_collection_async(collection_name: str, embeddings_size: int) -> None:
-    """Generate a collection for a given backend asynchronously.
-
-    Args:
-    ----
-        collection_name (str): Name of the Collection
-        embeddings_size (int): Size of the Embeddings
-
-    """
+    """Generate a collection for a given backend asynchronously."""
     client = get_async_qdrant_client()
-    client.set_sparse_model(embedding_model_name="Qdrant/bm25")
     await client.create_collection(
         collection_name=collection_name,
         vectors_config=models.VectorParams(size=embeddings_size, distance=models.Distance.COSINE),
-        sparse_vectors_config=client.get_fastembed_sparse_vector_params(),
+        sparse_vectors_config={
+            settings.sparse_vector_name: models.SparseVectorParams(
+                index=models.SparseIndexParams(on_disk=False)
+            )
+        },
     )
     logger.info(f"SUCCESS: Collection {collection_name} created.")
 

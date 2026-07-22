@@ -7,11 +7,14 @@ from loguru import logger
 
 if TYPE_CHECKING:
     from flashrank import Ranker
+    from FlagEmbedding import FlagReranker
 
-RerankerProvider = Literal["cohere", "flashrank", "none"]
+RerankerProvider = Literal["bge", "cohere", "flashrank", "none"]
 
 # Cache for FlashRank model (expensive to load)
 _flashrank_ranker: "Ranker | None" = None
+_bge_reranker: "FlagReranker | None" = None
+_bge_reranker_model: str | None = None
 
 
 def _get_flashrank_ranker() -> "Ranker":
@@ -25,6 +28,41 @@ def _get_flashrank_ranker() -> "Ranker":
     return _flashrank_ranker
 
 
+def _get_bge_reranker(model_name: str = "BAAI/bge-reranker-v2-m3") -> "FlagReranker":
+    """Get or create cached BGE reranker."""
+    global _bge_reranker, _bge_reranker_model
+    if _bge_reranker is None or _bge_reranker_model != model_name:
+        import torch
+        from FlagEmbedding import FlagReranker  # noqa: PLC0415
+
+        use_fp16 = torch.cuda.is_available()
+        logger.info(f"Loading BGE reranker model: {model_name}")
+        _bge_reranker = FlagReranker(model_name, use_fp16=use_fp16)
+        _bge_reranker_model = model_name
+    return _bge_reranker
+
+
+def rerank_with_bge(
+    documents: list[Document],
+    query: str,
+    top_k: int,
+    model_name: str = "BAAI/bge-reranker-v2-m3",
+) -> list[Document]:
+    """Rerank documents using BGE Reranker v2-m3 (local model)."""
+    if not documents:
+        return documents
+
+    reranker = _get_bge_reranker(model_name)
+    pairs = [[query, doc.page_content] for doc in documents]
+    scores = reranker.compute_score(pairs, normalize=True)
+    if isinstance(scores, (float, int)):
+        scores = [float(scores)]
+
+    ranked = sorted(zip(documents, scores), key=lambda x: x[1], reverse=True)[:top_k]
+    logger.info(f"BGE reranked {len(documents)} documents to top {len(ranked)}")
+    return [doc for doc, _ in ranked]
+
+
 def rerank_with_cohere(
     documents: list[Document],
     query: str,
@@ -32,19 +70,7 @@ def rerank_with_cohere(
     api_key: str,
     model: str = "rerank-v3.5",
 ) -> list[Document]:
-    """Rerank documents using Cohere Rerank API.
-
-    Args:
-        documents: List of documents to rerank.
-        query: The query to rerank against.
-        top_k: Number of top documents to return.
-        api_key: Cohere API key.
-        model: Cohere rerank model name.
-
-    Returns:
-        Reranked list of documents.
-
-    """
+    """Rerank documents using Cohere Rerank API."""
     from langchain_cohere import CohereRerank  # noqa: PLC0415
 
     if not documents:
@@ -57,17 +83,7 @@ def rerank_with_cohere(
 
 
 def rerank_with_flashrank(documents: list[Document], query: str, top_k: int) -> list[Document]:
-    """Rerank documents using FlashRank (local model).
-
-    Args:
-        documents: List of documents to rerank.
-        query: The query to rerank against.
-        top_k: Number of top documents to return.
-
-    Returns:
-        Reranked list of documents.
-
-    """
+    """Rerank documents using FlashRank (local model)."""
     from flashrank import RerankRequest  # noqa: PLC0415
 
     if not documents:
@@ -75,16 +91,13 @@ def rerank_with_flashrank(documents: list[Document], query: str, top_k: int) -> 
 
     ranker = _get_flashrank_ranker()
 
-    # Convert documents to flashrank format
     passages = [{"id": i, "text": doc.page_content, "meta": doc.metadata} for i, doc in enumerate(documents)]
 
     rerank_request = RerankRequest(query=query, passages=passages)
     results = ranker.rerank(rerank_request)
 
-    # Sort by score and take top_k
     sorted_results = sorted(results, key=lambda x: x["score"], reverse=True)[:top_k]
 
-    # Reconstruct documents preserving original metadata
     reranked_docs = []
     for result in sorted_results:
         original_idx = result["id"]
@@ -95,25 +108,19 @@ def rerank_with_flashrank(documents: list[Document], query: str, top_k: int) -> 
 
 
 def get_reranker(
-    provider: RerankerProvider,
-    top_k: int = 3,
+    provider: RerankerProvider = "bge",
+    top_k: int = 5,
     cohere_api_key: str | None = None,
+    model_name: str = "BAAI/bge-reranker-v2-m3",
 ) -> callable:
-    """Get a reranker function based on the provider.
-
-    Args:
-        provider: The reranker provider to use.
-        top_k: Number of top documents to return after reranking.
-        cohere_api_key: Cohere API key (required if provider is "cohere").
-
-    Returns:
-        A callable that takes (documents, query) and returns reranked documents.
-
-    """
+    """Get a reranker function based on the provider."""
     match provider:
         case "none":
             logger.info("Reranking disabled, using passthrough")
             return lambda docs, _: docs[:top_k] if len(docs) > top_k else docs
+
+        case "bge":
+            return lambda docs, query: rerank_with_bge(docs, query, top_k, model_name)
 
         case "cohere":
             if not cohere_api_key:
@@ -122,7 +129,6 @@ def get_reranker(
             return lambda docs, query: rerank_with_cohere(docs, query, top_k, cohere_api_key)
 
         case "flashrank":
-            # Pre-warm the model on startup
             _get_flashrank_ranker()
             return lambda docs, query: rerank_with_flashrank(docs, query, top_k)
 
