@@ -143,3 +143,10 @@ full-test-results.txt
 test-results.txt
 chunk_checkpoint.jsonl
 migration_checkpoint.jsonl
+
+# Agent-only instruction files
+agent.md
+plan.md
+AGENTS.md
+CLAUDE.md
+.claude/
