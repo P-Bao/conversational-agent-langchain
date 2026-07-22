@@ -1,3 +1,13 @@
+## 6.0.0 (2026-07-22)
+
+### Breaking Changes
+
+- **Retrieval-Only**: Backend RAG API `/rag` now returns `RetrievalResponse` (relevant documents and query) instead of generating answers via LLM.
+- **BGE-m3 Embeddings**: Switched default dense and sparse embeddings to `BAAI/bge-m3` (1024-dim dense + `bge-m3-sparse` named vector).
+- **BGE Reranker**: Integrated `BAAI/bge-reranker-v2-m3` cross-encoder for reranking retrieved candidates.
+- **Qwen DeepEval**: Replaced legacy Gemini DeepEval test suite with `test_rag_deepeval_qwen.py` for context precision/recall evaluation.
+- **Legacy Cleanup**: Removed generation, grading, rewrite nodes, prompt files, and legacy VCR tests.
+
 ## 5.5.0 (2025-12-05)
 
 ### Feat
