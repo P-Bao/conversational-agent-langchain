@@ -15,9 +15,3 @@ class AgentState(TypedDict):
     documents: list[Document]
     messages: Annotated[list[BaseMessage], add_messages]
     retry_count: int
-
-
-class Grade(BaseModel):
-    """Binary score for relevance check."""
-
-    is_relevant: bool = Field(description="True if the documents are relevant to the question, False otherwise")

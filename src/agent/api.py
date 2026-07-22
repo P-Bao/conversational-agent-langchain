@@ -6,8 +6,6 @@ from fastapi import FastAPI, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from loguru import logger
-from openinference.instrumentation.langchain import LangChainInstrumentor
-from phoenix.otel import register
 
 from agent.routes import collection, delete, embeddings, rag, search
 from agent.utils.config import Config
@@ -20,14 +18,6 @@ config = Config()
 initialize_all_vector_dbs(config=config)
 logger.info("Startup.")
 
-# configure the Phoenix tracer
-tracer_provider = register(
-    project_name="rag",
-    endpoint=config.phoenix_collector_endpoint,
-)
-
-LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
-
 # Show startup message
 f = pyfiglet.figlet_format("Conv Agent", font="alligator")
 logger.info(f"Welcome to\n\n{f}\n\n")
@@ -37,8 +27,8 @@ def my_schema() -> dict:
     """Generate the OpenAPI Schema."""
     openapi_schema = get_openapi(
         title="Conversational AI API",
-        version="1.0",
-        description="Chat with your Documents using Large Language Models.",
+        version="6.0.0",
+        description="Retrieval-only API: returns relevant document context for downstream LLMs using BGE-m3 and BGE reranker.",
         routes=app.routes,
     )
     app.openapi_schema = openapi_schema

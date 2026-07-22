@@ -14,74 +14,13 @@ from agent.data_model.internal_model import RetrievalResults
 
 
 def combine_text_from_list(input_list: list) -> str:
-    """Combines all strings in a list to one string.
-
-    Args:
-    ----
-        input_list (list): List of strings
-
-    Raises:
-    ------
-        TypeError: Input list must contain only strings
-
-    Returns:
-    -------
-        str: Combined string
-
-    """
-    # iterate through list and combine all strings to one
-
+    """Combines all strings in a list to one string."""
     logger.info(f"List: {input_list}")
-
     for text in input_list:
-        # verify that text is a string
         if not isinstance(text, str):
             msg = "Input list must contain only strings"
             raise TypeError(msg)
-
     return "\n".join(input_list)
-
-
-def load_prompt_template(prompt_name: str, task: str) -> PromptTemplate:
-    """Loading a task specific prompt template.
-
-    Args:
-    ----
-        prompt_name (str): Name of the prompt template
-        task (str): Name of the task, e.g. chat.
-
-    Raises:
-    ------
-        FileNotFoundError: If the File does not exist.
-
-    Returns:
-    -------
-        PromptTemplate: The loaded prompt template
-
-    """
-    try:
-        with Path(Path("prompts") / task / prompt_name).open(encoding="utf-8") as f:
-            prompt_template = f.read()
-    except FileNotFoundError as e:
-        msg = f"Prompt file '{prompt_name}' not found."
-        raise FileNotFoundError(msg) from e
-
-    return PromptTemplate.from_template(prompt_template)
-
-
-def convert_qdrant_result_to_retrieval_results(docs: list) -> list[RetrievalResults]:
-    """Converts the Qdrant result to a list of tuples.
-
-    Args:
-    ----
-        docs (list): The Qdrant result.
-
-    Returns:
-    -------
-        list: The list of tuples.
-
-    """
-    return [RetrievalResults(document=doc[0].page_content, score=doc[1], metadata=doc[0].metadata) for doc in docs]
 
 
 def create_tmp_folder() -> str:

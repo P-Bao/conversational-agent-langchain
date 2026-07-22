@@ -27,18 +27,18 @@ class EmbeddingResponse(BaseModel):
     files: list[str] = Field([], title="Files", description="The list of files that were embedded.")
 
 
-class QAResponse(BaseModel):
-    """The Response for the QA endpoint."""
+class RetrievedDoc(BaseModel):
+    """Retrieved document chunk with metadata and score."""
 
-    answer: str = Field(..., title="Answer", description="The answer to the question.")
-    meta_data: list
+    text: str = Field(..., title="Text", description="Content of the document chunk.")
+    page: int | None = Field(default=None, title="Page", description="Page number if available.")
+    source: str | None = Field(default=None, title="Source", description="Source document or link.")
+    score: float | None = Field(default=None, title="Score", description="Relevance or rerank score.")
+    metadata: dict = Field(default_factory=dict, title="Metadata", description="Chunk metadata payload.")
 
 
-class ExplainQAResponse(BaseModel):
-    """The Response for the Explain QA endpoint."""
+class RetrievalResponse(BaseModel):
+    """The Response for the Retrieval endpoint (v6 retrieval-only)."""
 
-    answer: str = Field(..., title="Answer", description="The answer to the question.")
-    meta_data: list
-    explanation: str = Field(..., title="Explanation", description="The explanation for the answer.")
-    text: str = Field(..., title="Text", description="The text of the document.")
-    score: float = Field(..., title="Score", description="The score of the document.")
+    query: str = Field(..., title="Query", description="The search query.")
+    documents: list[RetrievedDoc] = Field([], title="Documents", description="Retrieved relevant document chunks.")
