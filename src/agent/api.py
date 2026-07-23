@@ -1,41 +1,39 @@
-"""Main API."""
+"""Main API — retrieval & search only."""
 
-import pyfiglet
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from loguru import logger
 
-from agent.routes import collection, delete, embeddings, rag, search
+from agent.routes import rag, search
 from agent.utils.config import Config
-from agent.utils.vdb import initialize_all_vector_dbs
 
 load_dotenv(override=True)
 config = Config()
+logger.info("Startup: Retrieval & Search API v7.0.0")
 
 
-initialize_all_vector_dbs(config=config)
-logger.info("Startup.")
-
-# Show startup message
-f = pyfiglet.figlet_format("Conv Agent", font="alligator")
-logger.info(f"Welcome to\n\n{f}\n\n")
+app = FastAPI(
+    title="Retrieval & Search API",
+    version="7.0.0",
+    description="Retrieval-only API: returns relevant document context from external Qdrant using BGE-m3 (dense+sparse) and optional BGE reranker.",
+)
 
 
 def my_schema() -> dict:
     """Generate the OpenAPI Schema."""
+    from fastapi.openapi.utils import get_openapi
+
     openapi_schema = get_openapi(
-        title="Conversational AI API",
-        version="6.0.0",
-        description="Retrieval-only API: returns relevant document context for downstream LLMs using BGE-m3 and BGE reranker.",
+        title="Retrieval & Search API",
+        version="7.0.0",
+        description="Retrieval-only API.",
         routes=app.routes,
     )
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 
 
-app = FastAPI()
 app.openapi = my_schema
 
 
@@ -51,16 +49,13 @@ async def global_exception_handler(_request: Request, exc: Exception) -> JSONRes
 
 logger.info("Loading REST API Finished.")
 
-app.include_router(router=collection.router, prefix="/collection")
-app.include_router(router=embeddings.router, prefix="/embeddings")
-app.include_router(router=search.router, prefix="/semantic")
 app.include_router(router=rag.router, prefix="/rag")
-app.include_router(router=delete.router, prefix="/embeddings")
+app.include_router(router=search.router, prefix="/semantic")
 
 
 @app.get(path="/", tags=["root"])
 def read_root() -> str:
-    """Returning the Root."""
+    """Returning the root."""
     return "Welcome to the RAG Backend. Please navigate to /docs for the OpenAPI!"
 
 

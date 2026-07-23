@@ -1,7 +1,7 @@
 """DeepEval test suite hỗ trợ cả Qwen self-host và NVIDIA NIM API làm eval LLM.
 
 Đánh giá chất lượng retrieval_context (contextual precision, contextual recall)
-và kiểm tra custom chunk locators assertion.
+qua route ``/rag/`` của API. Dùng TestClient nên không cần server live.
 
 Yêu cầu env (NVIDIA NIM):
   NVIDIA_API_KEY (hoặc NVIDIA_EVAL_API_KEY)
@@ -17,19 +17,18 @@ Yêu cầu env (Qwen self-host fallback):
 
 import json
 import os
-import time
 import threading
+import time
 from pathlib import Path
 from typing import Any, List
 
 import pytest
-from deepeval.test_case import LLMTestCase
+from deepeval import assert_test
 from deepeval.metrics import ContextualPrecisionMetric, ContextualRecallMetric
 from deepeval.models import DeepEvalBaseLLM
-from deepeval import assert_test
+from deepeval.test_case import LLMTestCase
+from fastapi.testclient import TestClient
 from openai import OpenAI
-
-from agent.backend.graph import Graph
 
 pytestmark = [pytest.mark.qwen]
 
@@ -51,11 +50,11 @@ class RateLimiter:
             elapsed = now - self.last_request_time
             if elapsed < self.min_interval:
                 time.sleep(self.min_interval - elapsed)
-            self.last_request_time = time.time()
+            self.last_request_time = now
 
 
 class NvidiaEvalLLM(DeepEvalBaseLLM):
-    """Custom DeepEval LLM wrapper cho NVIDIA NIM API với rate limit (ví dụ 30 requests/s)."""
+    """Custom DeepEval LLM wrapper cho NVIDIA NIM API với rate limit."""
 
     def __init__(self) -> None:
         self.base_url = os.environ.get("NVIDIA_EVAL_BASE_URL", "https://integrate.api.nvidia.com/v1")
@@ -121,17 +120,17 @@ def assert_chunk_locators(retrieved_docs: List[Any], expected_locators: List[dic
     retrieved_gids = {doc.metadata.get("global_id") for doc in retrieved_docs if doc.metadata.get("global_id")}
     expected_gids = {loc["global_id"] for loc in expected_locators if "global_id" in loc}
 
-    # 1. Global ID match
     if retrieved_gids & expected_gids:
         return
 
-    # 2. Fallback content match
-    retrieved_text = " ".join([doc.page_content for doc in retrieved_docs]).lower()
+    retrieved_text = " ".join([getattr(doc, "page_content", "") for doc in retrieved_docs]).lower()
     for fragment in expected_context:
         if fragment.strip().lower() in retrieved_text:
             return
 
-    pytest.fail(f"None of the retrieved chunks matched expected locators or context. Retrieved gids: {retrieved_gids}")
+    pytest.fail(
+        f"None of the retrieved chunks matched expected locators or context. Retrieved gids: {retrieved_gids}"
+    )
 
 
 @pytest.fixture(scope="module")
@@ -150,24 +149,45 @@ def golden_questions() -> list[dict]:
         return json.load(f)
 
 
-def test_qwen_deepeval_retrieval(golden_questions: list[dict], eval_llm: DeepEvalBaseLLM) -> None:
-    """Test full retrieval quality across golden questions."""
-    graph = Graph().build_graph()
+@pytest.fixture(scope="module")
+def rag_client(app) -> TestClient:
+    """In-process TestClient đã được patch expensive startups bởi fixture `app`."""
+    return TestClient(app)
 
+
+def test_qwen_deepeval_retrieval(
+    golden_questions: list[dict],
+    eval_llm: DeepEvalBaseLLM,
+    rag_client: TestClient,
+) -> None:
+    """Test full retrieval quality across golden questions (via /rag route)."""
     for item in golden_questions:
         question = item["question"]
         expected_context = item.get("expected_context", [])
         expected_locators = item.get("expected_chunk_locators", [])
 
-        # Run retrieval
-        chain_result = graph.invoke({"messages": [{"role": "user", "content": question}]})
-        retrieved_docs = chain_result.get("documents", [])
-        retrieved_contexts = [doc.page_content for doc in retrieved_docs]
+        response = rag_client.post(
+            "/rag/",
+            json={
+                "messages": [{"role": "user", "content": question}],
+                "collection_name": item.get("collection_name", "default"),
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
 
-        # Custom locator assertion
-        assert_chunk_locators(retrieved_docs, expected_locators, expected_context)
+        retrieved_docs = payload.get("documents", [])
+        retrieved_contexts = [d["text"] for d in retrieved_docs]
 
-        # DeepEval metrics
+        assert_chunk_locators(
+            [
+                type("Doc", (), {"page_content": d["text"], "metadata": d.get("metadata", {})})()
+                for d in retrieved_docs
+            ],
+            expected_locators,
+            expected_context,
+        )
+
         test_case = LLMTestCase(
             input=question,
             actual_output="",

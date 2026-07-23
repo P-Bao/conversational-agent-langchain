@@ -1,46 +1,68 @@
-"""Reranker utilities for document reranking."""
+"""Optional reranker utilities.
 
+Default provider is ``none`` (passthrough / no rerank). Set ``RERANK_PROVIDER=bge``
+in the environment to enable the local BGE reranker v2-m3 model.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Literal
 
+import torch
 from langchain_core.documents import Document
 from loguru import logger
 
 if TYPE_CHECKING:
-    from flashrank import Ranker
     from FlagEmbedding import FlagReranker
 
-RerankerProvider = Literal["bge", "cohere", "flashrank", "none"]
+RerankerProvider = Literal["bge", "none"]
 
-# Cache for FlashRank model (expensive to load)
-_flashrank_ranker: "Ranker | None" = None
+RerankerFn = Callable[[list[Document], str], list[Document]]
+
+def _prepare_for_model_fallback(model_input, options=None):
+    """Fallback for prepare_for_model method missing in newer transformers."""
+    if isinstance(model_input, dict) and 'input_ids' in model_input:
+        return model_input
+    elif isinstance(model_input, (list, tuple)):
+        return {'input_ids': list(model_input)}
+    elif hasattr(model_input, 'input_ids'):
+        return {'input_ids': model_input.input_ids}
+    return model_input
+
+# Cache for BGE reranker (expensive to load)
 _bge_reranker: "FlagReranker | None" = None
 _bge_reranker_model: str | None = None
 
-
-def _get_flashrank_ranker() -> "Ranker":
-    """Get or create cached FlashRank ranker."""
-    global _flashrank_ranker
-    if _flashrank_ranker is None:
-        from flashrank import Ranker  # noqa: PLC0415
-
-        _flashrank_ranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2", cache_dir="/tmp/flashrank")
-        logger.info("FlashRank model loaded and cached")
-    return _flashrank_ranker
-
-
 def _get_bge_reranker(model_name: str = "BAAI/bge-reranker-v2-m3") -> "FlagReranker":
-    """Get or create cached BGE reranker."""
+    """Get or create cached BGE reranker with compatibility fix."""
     global _bge_reranker, _bge_reranker_model
     if _bge_reranker is None or _bge_reranker_model != model_name:
-        import torch
-        from FlagEmbedding import FlagReranker  # noqa: PLC0415
-
         use_fp16 = torch.cuda.is_available()
-        logger.info(f"Loading BGE reranker model: {model_name}")
-        _bge_reranker = FlagReranker(model_name, use_fp16=use_fp16)
+        
+        # Try multiple import paths for FlagReranker
+        try:
+            # First try: New format (FlagEmbedding.inference.reranker...)
+            from FlagEmbedding.inference.reranker.encoder_only.base import FlagReranker as BaseFlagReranker
+            _bge_reranker = BaseFlagReranker(model_name, use_fp16=use_fp16)
+        except ImportError:
+            try:
+                # Second try: Old format (direct import)
+                from FlagEmbedding import FlagReranker as BaseFlagReranker
+                _bge_reranker = BaseFlagReranker(model_name, use_fp16=use_fp16)
+            except ImportError:
+                msg = "FlagEmbedding package not properly installed. Try: uv pip install --upgrade FlagEmbedding"
+                logger.error(msg)
+                raise ImportError(msg)
+        
+        # Add prepare_for_model if missing (for compatibility with newer transformers)
+        tokenizer = _bge_reranker.tokenizer
+        if not hasattr(tokenizer, 'prepare_for_model'):
+            logger.info("Adding prepare_for_model fallback (newer transformers compatibility)")
+            tokenizer.prepare_for_model = lambda model_input, options=None: _prepare_for_model_fallback(model_input, options)
+        
         _bge_reranker_model = model_name
     return _bge_reranker
-
 
 def rerank_with_bge(
     documents: list[Document],
@@ -52,9 +74,24 @@ def rerank_with_bge(
     if not documents:
         return documents
 
-    reranker = _get_bge_reranker(model_name)
-    pairs = [[query, doc.page_content] for doc in documents]
-    scores = reranker.compute_score(pairs, normalize=True)
+    try:
+        reranker = _get_bge_reranker(model_name)
+        pairs = [[query, doc.page_content] for doc in documents]
+        scores = reranker.compute_score(pairs, normalize=True)
+
+    except Exception as e:
+        logger.warning(f"BGE reranking failed (prepare_for_model compatibility): {type(e).__name__}: {e}")
+        logger.warning("Falling back to manual similarity calculation")
+
+        scores = []
+        for q, doc in pairs:
+            query_words = set(q.lower().split())
+            doc_words = set(doc.lower().split())
+            intersection = query_words & doc_words
+            union = query_words | doc_words
+            score = len(intersection) / len(union) if union else 0.0
+            scores.append(score)
+
     if isinstance(scores, (float, int)):
         scores = [float(scores)]
 
@@ -63,75 +100,36 @@ def rerank_with_bge(
     return [doc for doc, _ in ranked]
 
 
-def rerank_with_cohere(
-    documents: list[Document],
-    query: str,
-    top_k: int,
-    api_key: str,
-    model: str = "rerank-v3.5",
-) -> list[Document]:
-    """Rerank documents using Cohere Rerank API."""
-    from langchain_cohere import CohereRerank  # noqa: PLC0415
-
-    if not documents:
-        return documents
-
-    reranker = CohereRerank(model=model, cohere_api_key=api_key, top_n=top_k)
-    reranked = reranker.compress_documents(documents=documents, query=query)
-    logger.info(f"Cohere reranked {len(documents)} documents to top {len(reranked)}")
-    return list(reranked)
-
-
-def rerank_with_flashrank(documents: list[Document], query: str, top_k: int) -> list[Document]:
-    """Rerank documents using FlashRank (local model)."""
-    from flashrank import RerankRequest  # noqa: PLC0415
-
-    if not documents:
-        return documents
-
-    ranker = _get_flashrank_ranker()
-
-    passages = [{"id": i, "text": doc.page_content, "meta": doc.metadata} for i, doc in enumerate(documents)]
-
-    rerank_request = RerankRequest(query=query, passages=passages)
-    results = ranker.rerank(rerank_request)
-
-    sorted_results = sorted(results, key=lambda x: x["score"], reverse=True)[:top_k]
-
-    reranked_docs = []
-    for result in sorted_results:
-        original_idx = result["id"]
-        reranked_docs.append(documents[original_idx])
-
-    logger.info(f"FlashRank reranked {len(documents)} documents to top {len(reranked_docs)}")
-    return reranked_docs
-
-
 def get_reranker(
-    provider: RerankerProvider = "bge",
-    top_k: int = 5,
-    cohere_api_key: str | None = None,
+    provider: str,
+    top_k: int,
+    *,
     model_name: str = "BAAI/bge-reranker-v2-m3",
-) -> callable:
-    """Get a reranker function based on the provider."""
-    match provider:
-        case "none":
-            logger.info("Reranking disabled, using passthrough")
-            return lambda docs, _: docs[:top_k] if len(docs) > top_k else docs
+) -> RerankerFn:
+    """Return a reranking callable for the given provider.
 
-        case "bge":
-            return lambda docs, query: rerank_with_bge(docs, query, top_k, model_name)
+    Supported providers:
+    - ``"none"``: passthrough (truncate to ``top_k`` only).
+    - ``"bge"``: local BGE reranker v2-m3 via ``FlagEmbedding``.
 
-        case "cohere":
-            if not cohere_api_key:
-                msg = "Cohere API key is required for Cohere reranker"
-                raise ValueError(msg)
-            return lambda docs, query: rerank_with_cohere(docs, query, top_k, cohere_api_key)
+    The Cohere and FlashRank providers have been removed from this branch to
+    avoid extra dependencies. Set ``RERANK_PROVIDER=none`` (default) to skip
+    reranking entirely.
+    """
+    normalized = (provider or "none").strip().lower()
 
-        case "flashrank":
-            _get_flashrank_ranker()
-            return lambda docs, query: rerank_with_flashrank(docs, query, top_k)
+    if normalized == "none":
+        def passthrough(docs: list[Document], _query: str) -> list[Document]:
+            return docs[:top_k]
+        return passthrough
 
-        case _:
-            msg = f"Unknown reranker provider: {provider}"
-            raise ValueError(msg)
+    if normalized == "bge":
+        def bge_rerank(docs: list[Document], query: str) -> list[Document]:
+            return rerank_with_bge(docs, query, top_k=top_k, model_name=model_name)
+        return bge_rerank
+
+    msg = (
+        f"Unknown reranker provider: {provider!r}. "
+        "Supported providers in this branch: 'bge', 'none'."
+    )
+    raise ValueError(msg)

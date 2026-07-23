@@ -29,7 +29,6 @@ def retrieve_documents(state: AgentState, config: RunnableConfig, *, cfg: Config
         reranker_fn = get_reranker(
             provider=cfg.rerank_provider,
             top_k=cfg.rerank_top_k,
-            cohere_api_key=cfg.cohere_api_key or None,
             model_name=cfg.rerank_model,
         )
         relevant_documents = reranker_fn(relevant_documents, query)

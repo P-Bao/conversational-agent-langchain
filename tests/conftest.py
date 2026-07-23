@@ -3,10 +3,8 @@ from __future__ import annotations
 import importlib
 import os
 from collections.abc import Iterator, Mapping
-from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Literal
-from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
@@ -34,7 +32,6 @@ def _is_allowed_host(url: str) -> bool:
 
     parsed = urlparse(url)
     host = parsed.hostname
-    # Relative URLs should be allowed.
     if host is None:
         return True
     return host in ALLOWED_TEST_HOSTS
@@ -47,11 +44,12 @@ def anyio_backend() -> Literal["asyncio"]:
 
 @pytest.fixture(autouse=True, scope="session")
 def test_env_defaults() -> None:
-    os.environ.setdefault("AU_EMBED_MODEL_NAME", "BAAI/bge-m3")
-    os.environ.setdefault("AU_EMBED_DIMENSION", "1024")
-    os.environ.setdefault("AU_SPARSE_MODEL_NAME", "BAAI/bge-m3")
-    os.environ.setdefault("AU_RERANK_MODEL_NAME", "BAAI/bge-reranker-v2-m3")
-    os.environ.setdefault("RERANK_PROVIDER", "bge")
+    os.environ.setdefault("EMBEDDING_PROVIDER", "bge")
+    os.environ.setdefault("EMBEDDING_MODEL", "BAAI/bge-m3")
+    os.environ.setdefault("EMBEDDING_SIZE", "1024")
+    os.environ.setdefault("SPARSE_MODEL", "BAAI/bge-m3")
+    os.environ.setdefault("RERANK_PROVIDER", "none")
+    os.environ.setdefault("RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
     os.environ.setdefault("QDRANT_URL", "http://localhost")
     os.environ.setdefault("QDRANT_PORT", "6333")
     os.environ.setdefault("QDRANT_API_KEY", "test_api_key")
@@ -127,12 +125,9 @@ def block_external_http(monkeypatch: pytest.MonkeyPatch, request: pytest.Fixture
 
 @pytest.fixture(scope="session")
 def app() -> Iterator[FastAPI]:
-    """Import the FastAPI app with expensive startup side effects patched out."""
-    with ExitStack() as stack:
-        stack.enter_context(patch("agent.utils.vdb.initialize_all_vector_dbs", return_value=None))
-
-        module = importlib.import_module("agent.api")
-        yield module.app
+    """Import the FastAPI app (no startup side effects in v7)."""
+    module = importlib.import_module("agent.api")
+    yield module.app
 
 
 @pytest.fixture

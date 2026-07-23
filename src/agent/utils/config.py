@@ -42,10 +42,8 @@ class Config(BaseSettings):
     openai_api_key: str = ""
     cohere_api_key: str = ""
 
-    # === Reranker (BGE-reranker v2-m3) ===
-    rerank_provider: str = "bge"
-    rerank_base_url: str = ""
-    rerank_api_key: str = ""
+    # === Reranker (BGE-reranker v2-m3, optional — default 'none' = passthrough) ===
+    rerank_provider: str = "none"
     rerank_model: str = Field(
         default="BAAI/bge-reranker-v2-m3",
         validation_alias=AliasChoices("rerank_model", "RERANK_MODEL", "AU_RERANK_MODEL_NAME", "AU_RERANK_MODEL"),

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from http import HTTPStatus
-from unittest.mock import patch
 
 import pytest
 
@@ -13,12 +12,24 @@ pytestmark = pytest.mark.integration
 def test_read_root(client) -> None:
     response = client.get("/")
     assert response.status_code == HTTPStatus.OK
+    assert "Welcome to the RAG Backend" in response.text
 
 
-@patch("agent.routes.collection.initialize_vector_db_async", return_value=None)
-def test_create_collection(_mock_init_db, client) -> None:
-    collection_name = "test_collection"
-    response = client.post(f"/collection/create/{collection_name}", params={"embeddings_size": 1536})
-
+def test_docs_endpoint(client) -> None:
+    response = client.get("/docs")
     assert response.status_code == HTTPStatus.OK
-    assert response.json() == {"message": f"Collection {collection_name} created."}
+
+
+def test_collection_routes_removed(client) -> None:
+    response = client.post("/collection/create/x", params={"embeddings_size": 1536})
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+def test_embeddings_documents_route_removed(client) -> None:
+    response = client.post("/embeddings/documents", params={"collection_name": "x"})
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+def test_delete_route_removed(client) -> None:
+    response = client.delete("/embeddings/delete/x", params={"collection_name": "x"})
+    assert response.status_code == HTTPStatus.NOT_FOUND

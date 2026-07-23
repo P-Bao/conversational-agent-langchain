@@ -8,6 +8,28 @@ Backend RAG retrieval service: trả về context (documents) cho downstream LLM
 - **BGE Reranker v2-m3**: Multilingual reranker cho tiếng Việt và đa ngôn ngữ.
 - **DeepEval với Qwen Self-host**: Suite đánh giá `ContextualPrecision` và `ContextualRecall` cùng custom locator verification dùng Qwen OpenAI-compatible API.
 
+## Documentation
+
+Bộ tài liệu bàn giao đầy đủ tại [`docs/`](docs/README.md):
+
+| Lĩnh vực | File |
+|---|---|
+| Kien trúc | [ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Cài đặt | [SETUP.md](docs/SETUP.md) |
+| Triển khai Docker | [DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| API Reference | [API_REFERENCE.md](docs/API_REFERENCE.md) |
+| Cấu hình env | [CONFIGURATION.md](docs/CONFIGURATION.md) |
+| Vận hành | [OPERATIONS.md](docs/OPERATIONS.md) |
+| Troubleshooting | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) |
+| Bảo mật | [SECURITY.md](docs/SECURITY.md) |
+| Testing | [TESTING.md](docs/TESTING.md) |
+| Phát triển | [DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| Đánh giá DeepEval | [EVALUATION.md](docs/EVALUATION.md) |
+| Nhập dữ liệu | [DATA_INGESTION.md](docs/DATA_INGESTION.md) |
+| Thuật ngữ | [GLOSSARY.md](docs/GLOSSARY.md) |
+| User Guide | [USER_GUIDE.md](docs/USER_GUIDE.md) |
+| Handover Checklist | [HANDOVER_CHECKLIST.md](docs/HANDOVER_CHECKLIST.md) |
+
 ## Quickstart
 
 1. Sao chép `template.env` thành `.env` và thiết lập các biến môi trường:
