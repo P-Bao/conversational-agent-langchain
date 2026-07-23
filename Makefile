@@ -1,15 +1,17 @@
 # Makefile
 #
 # Common development shortcuts for this project. These targets wrap the
-# underlying tools (`uv`, `prek`, `pytest`, `docker compose`, and Streamlit)
-# so contributors can use one consistent command surface.
+# underlying tools (`uv`, `prek`, `pytest`, `docker compose`) so contributors
+# can use one consistent command surface.
+#
+# Frontend (Streamlit) đã được chuyển sang repository riêng ở v7.
 
 # Use bash for recipe execution so shell behavior is consistent across targets.
 SHELL = /bin/bash
 
 # Mark all command names as phony so make does not confuse them with files of
 # the same name in the repository.
-.PHONY: help style restart clean start_backend start_vectordb setup start_docker down start_frontend test test-vcr update-vcr-tests test-e2e
+.PHONY: help style restart clean start_backend start_vectordb setup start_docker down test test-vcr update-vcr-tests test-e2e
 
 # Print a quick reference for the most common developer commands.
 help:
@@ -21,15 +23,13 @@ help:
 	@echo "  make update-vcr-tests - Rewrite VCR recordings"
 	@echo "  make test-e2e       - Run end-to-end tests"
 	@echo "  make start_backend  - Start the FastAPI backend"
-	@echo "  make start_frontend - Start the Streamlit frontend"
 	@echo "  make start_docker   - Start all docker containers"
 	@echo "  make clean          - Remove build artifacts"
 
-# Install backend dependencies, git hooks, and frontend dependencies.
+# Install backend dependencies and git hooks.
 setup:
 	uv sync
 	prek install
-	cd frontend && uv sync
 
 # Run the repository's configured formatting, linting, and static checks.
 style:
@@ -58,13 +58,9 @@ test-e2e:
 start_backend:
 	uv run uvicorn agent.api:app --reload --port 8001
 
-# Start the Streamlit frontend from the frontend project directory.
-start_frontend:
-	cd frontend && uv run streamlit run assistant.py --theme.base="dark"
-
 # Start only the vector database service needed by local backend workflows.
 start_vectordb:
-	docker compose up --build -d qdrant
+	docker compose -f ../qdrant_docker/docker-compose.yml up --build -d
 
 # Start all services defined in docker-compose.yml in detached mode.
 start_docker:

@@ -1,3 +1,24 @@
+## 7.0.0 (2026-07-23)
+
+### Breaking Changes
+
+- **Ingestion đã chuyển hệ thống ngoài**: Repo này không còn endpoint `/collection/create`, `/embeddings/documents`, `/embeddings/string`, `/embeddings/delete`. Không còn `python -m agent.scripts.migrate_dump_to_qdrant`. Qdrant collection phải được dựng bởi hệ thống ingestion ngoài trước khi API phục vụ.
+- **Frontend (Streamlit) tách repo**: `frontend/`, `Dockerfile.frontend` đã được loại bỏ khỏi repo này. Liên hệ team frontend để biết repo Streamlit mới.
+- **Cohere + FlashRank rerankers đã bỏ**: Chỉ hỗ trợ provider `none` (passthrough) và `bge` (BGE-reranker v2-m3). Default đổi từ `bge` → `none`.
+- **OpenAI embedding provider đã bỏ**: Chỉ hỗ trợ `bge` provider.
+
+### Added
+
+- **Health endpoints**: `GET /healthz` (liveness) + `GET /readyz` (Qdrant + collection readiness).
+- **Docker Compose healthcheck**: dùng `/healthz` qua Python `urllib`.
+- **Makefile cleanup**: xoá target `start_frontend`.
+- **Configuration**: xoá legacy env vars (COHERE_API_KEY, OPENAI_API_KEY, QWEN_EVAL_THINKING, EMBEDDING_BASE_URL, RRF_K, DBSF_WINDOW...).
+
+### Tests
+
+- 61/61 unit + integration tests pass.
+- DeepEval Qwen / NVIDIA NIM chạy qua `TestClient.post('/rag/', ...)`.
+
 ## 6.0.0 (2026-07-22)
 
 ### Breaking Changes

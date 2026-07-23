@@ -13,7 +13,7 @@ conversational-agent-langchain/
 │   │   └── nodes/retrieval.py      # retrieve_documents node (gọi get_retriever + get_reranker)
 │   ├── data_model/
 │   │   ├── request_data_model.py   # SearchParams, ChatMessages, RAGRequest
-│   │   └── response_data_model.py  # SearchResponse, RetrievalResponse, RetrievedDoc, Status, EmbeddingResponse (legacy)
+│   │   └── response_data_model.py  # SearchResponse, RetrievalResponse, RetrievedDoc, Status
 │   ├── routes/
 │   │   ├── rag.py                  # POST /rag/, /rag/stream (LangGraph)
 │   │   ├── search.py               # POST /semantic/search
@@ -23,7 +23,7 @@ conversational-agent-langchain/
 │       ├── embeddings.py           # BGE-m3 dense + sparse
 │       ├── vdb.py                  # Qdrant client (sync + async) — No collection mgmt
 │       ├── retriever.py            # Hybrid retriever (RRF/DBSF)
-│       └── reranker.py             # get_reranker() — providers: none / bge (cohere+flashrank removed)
+│       └── reranker.py             # get_reranker() — providers: none / bge
 ├── tests/
 │   ├── conftest.py
 │   ├── unit_tests/
@@ -33,8 +33,9 @@ conversational-agent-langchain/
 │   ├── test_integration.py
 │   ├── test_stream.py
 │   └── test_rag_deepeval_qwen.py
-├── config/
-│   └── qdrant.yaml
+├── ConvAgentBruno/                 # Bruno API test collection (chi giữ RAG + Search)
+│   ├── RAG/{Chat,Stream}.bru
+│   └── Search/Search.bru
 ├── docs/                           # Tai lieu (ban giao v7.0.0)
 ├── .env                            # Secrets (gitignored)
 ├── template.env                    # Mau env
@@ -45,9 +46,14 @@ conversational-agent-langchain/
 └── ruff.toml                       # Linter config
 ```
 
-> **Đã xoá ở v7** (giờ thuộc hệ ngoài quản lý Qdrant):
-> `backend/services/`, `scripts/`, `utils/utility.py`, `data_model/internal_model.py`,
-> `routes/{collection,delete,embeddings}.py`, `frontend/`.
+> **Đã xoá ở v7** (cho cả branch này lẫn đã thuộc hệ ngoài quản lý Qdrant):
+> - `backend/services/`, `scripts/`, `utils/utility.py`, `data_model/internal_model.py`
+> - `routes/{collection,delete,embeddings}.py`
+> - `frontend/` (Streamlit repo đã tách)
+> - `Dockerfile.frontend`
+> - `config/qdrant.yaml` (Qdrant quản lý ngoài repo)
+> - `resources/` (legacy demo PDFs + diagrams)
+> - `ConvAgentBruno/Embeddings/` (endpoints `/embeddings/*` đã bỏ ở v7)
 
 ## 2. Code Style & Conventions
 
