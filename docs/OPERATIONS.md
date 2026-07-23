@@ -1,4 +1,4 @@
-# Runbook Vận Hành — Operations Guide
+# Runbook Vận Hành — Operations Guide (v7.0.0)
 
 ## 1. Startup Sequence
 
@@ -7,13 +7,15 @@
 ```
 1. [Create network]   docker network create test_network
 2. [Start Qdrant]     docker compose up -d           (qdrant_docker/)
-3. [Start API]        docker compose up --build -d   (conversational-agent-langchain/)
-4. [Verify]           curl http://localhost:8001/
+3. [Ingestion]        Repo ingestion NGOÀI — tao collection + upsert data
+4. [Start API]        docker compose up --build -d   (conversational-agent-langchain/)
+5. [Verify healthz]   curl http://localhost:8001/healthz
+6. [Verify readyz]    curl http://localhost:8001/readyz  # phai 200 ready
 ```
 
-API container cần Qdrant ready trước — nhưng không có `depends_on` cross-compose.
-Nếu API start trước Qdrant, nó sẽ crash vì không connect được Qdrant ở startup
-(`initialize_all_vector_dbs` tại thời điểm import). Đây là behavior cố ý (fail fast).
+API container **không cần Qdrant ready trước khi start**. Nếu Qdrant down,
+API vẫn start được vì client lazy (chỉ kết nối khi route được gọi). Nếu
+`/readyz` fail, block traffic ở LB layer cho đến khi Qdrant + collection sẵn sàng.
 
 ## 2. Common Operations
 
@@ -23,17 +25,49 @@ Nếu API start trước Qdrant, nó sẽ crash vì không connect được Qdra
 | Stop API | `docker compose down` |
 | Restart API | `docker compose restart` |
 | Rebuild + start | `docker compose up --build -d` |
-| Start Qdrant | `docker compose up -d` (ở qdrant_docker/) |
-| Stop Qdrant | `docker compose down` (ở qdrant_docker/) |
+| Start Qdrant | `cd ../qdrant_docker && docker compose up -d` |
+| Stop Qdrant | `cd ../qdrant_docker && docker compose down` |
 | Full stack stop | `docker compose down` (cả 2 thư mục) |
 | View logs API | `docker logs -f conversational-rag-api` |
 | View logs Qdrant | `docker logs -f qdrant` |
 
-## 3. Logs & Troubleshooting
+## 3. Health & Readiness
+
+### Liveness probe (`/healthz`)
+
+```bash
+curl http://localhost:8001/healthz
+# 200 {"status":"ok"}    ← process con song
+```
+
+### Readiness probe (`/readyz`)
+
+```bash
+curl http://localhost:8001/readyz
+# 200 {"status":"ready","collection":"documents"}    ← Qdrant OK + collection ton tai
+# 503 {"status":"fail","reason":"collection_missing","collection":"documents"}
+# 503 {"status":"fail","reason":"qdrant_unreachable","details":"Connection refused"}
+# 503 {"status":"fail","reason":"qdrant_error","details":"..."}
+```
+
+### API startup logs (success path):
+
+```
+Loading BGE-m3 model: BAAI/bge-m3
+Startup: Retrieval & Search API v7.0.0
+Loading REST API Finished.
+```
+
+Nếu `RERANK_PROVIDER=bge` thì thêm dòng:
+```
+Loading BGE-reranker-v2-m3 model
+```
+
+## 4. Logs & Troubleshooting
 
 ### API container logs:
 
-```powershell
+```bash
 # Follow logs
 docker logs -f conversational-rag-api
 
@@ -41,87 +75,46 @@ docker logs -f conversational-rag-api
 docker logs --tail 100 conversational-rag-api
 
 # Filter by log level
-docker logs conversational-rag-api 2>&1 | findstr "ERROR|CRITICAL"
+docker logs conversational-rag-api 2>&1 | grep -E "ERROR|CRITICAL"
 
 # Filter specifc component
-docker logs conversational-rag-api 2>&1 | findstr "BGE-m3"
-docker logs conversational-rag-api 2>&1 | findstr "Qdrant"
+docker logs conversational-rag-api 2>&1 | grep "BGE-m3"
+docker logs conversational-rag-api 2>&1 | grep "Qdrant"
 ```
 
 ### Qdrant logs:
 
-```powershell
+```bash
 docker logs -f qdrant
 curl http://localhost:6333/healthz  # Qdrant health check
 ```
 
-### API startup logs (success path):
-
-```
-Bytecode compiled X files in Y.Zs
-Loading BGE-m3 model: BAAI/bge-m3
-SUCCESS: Collection documents already exists.
-Loading REST API Finished.
-```
-
-## 4. Data Backup & Restore
+## 5. Data Backup & Restore
 
 ### Qdrant data backup:
 
 Qdrant lưu data trong volume `/qdrant/storage` (map đến `../vector_db` trên host).
 
-```powershell
+```bash
 # Backup Qdrant data
-Copy-Item -Recurse vector_db/ vector_db.backup.$(Get-Date -Format yyyyMMdd)/
+cp -r vector_db/ "vector_db.backup.$(date +%Y%m%d)/"
 ```
 
 Restore: stop Qdrant, replace thư mục `vector_db/` với bản backup, start lại.
 
-### Checkpoint files:
-
-- `migration_checkpoint.jsonl`: resume migration nếu script bị gián đoạn.
-- `chunk_checkpoint.jsonl`: resume chunking.
-
-Backup cả 2 file này trước khi re-migration:
-
-```powershell
-Copy-Item migration_checkpoint.jsonl "migration_checkpoint.jsonl.$(Get-Date -Format yyyyMMdd)"
-```
-
-## 5. Data Migration (Production)
-
-Khi chạy migration production:
-
-```powershell
-# 1. Verify Qdrant đang chạy
-curl http://localhost:6333/
-
-# 2. Dry-run: kiểm tra có input không, chunk + embed 10 docs
-uv run python -m agent.scripts.migrate_dump_to_qdrant --limit 10
-
-# 3. Full migration (--recreate nếu cần collection mới)
-uv run python -m agent.scripts.migrate_dump_to_qdrant --recreate
-
-# 4. Chạy locator để cập nhật golden dataset
-uv run python tests/locate_expected_chunks.py
-
-# 5. Chạy DeepEval để verify chất lượng
-$env:ALLOW_NETWORK_TESTS = "1"
-uv run pytest tests/test_rag_deepeval_qwen.py -m qwen -vv
-```
-
-Tham khảo [DATA_INGESTION.md](DATA_INGESTION.md) cho chi tiết CLI flags.
+> **Không có migration script trong repo này** — việc tạo collection + upsert
+> data thuộc repo ingestion ngoài.
 
 ## 6. Monitoring
 
-### Health Check Endpoint:
+### Health Endpoints:
 
-```powershell
-curl http://localhost:8001/
-# Response 200: "Welcome to the RAG Backend..."
+```bash
+# Process up?
+curl http://localhost:8001/healthz
 
-curl http://localhost:6333/
-# Qdrant version JSON
+# Qdrant + collection ready?
+curl http://localhost:8001/readyz
 ```
 
 ### Key Metrics:
@@ -129,53 +122,55 @@ curl http://localhost:6333/
 | Metric | How to check | Threshold |
 |---|---|---|
 | API response time | `curl -w "%{time_total}"` | < 2s (with cache warm) |
-| Embedding time (first) | Container logs: "Loading BGE-m3 model" → Done | < 120s |
-| Rerank time | Logs: "BGE reranked N docs to top M" | < 2s |
-| Memory usage | `docker stats conversational-rag-api` | < 10GB |
+| Embedding time (first) | Container logs: "Loading BGE-m3 model" → Done | < 180s |
+| Rerank time | Logs: "BGE reranked N docs to top M" (chỉ khi RERANK_PROVIDER=bge) | < 2s |
+| Memory usage | `docker stats conversational-rag-api` | < 8GB nếu RERANK_PROVIDER=none |
+| Memory usage (reranker on) | `docker stats conversational-rag-api` | < 12GB |
 | Disk | `docker system df` | Varies |
 
 ### Alert Triggers:
 
-- API container restarting (CrashLoopBackOff): usually Qdrant not reachable
-- `Connection refused [Errno 111]` in logs: Qdrant down or wrong URL
-- `FileNotFoundError: input/` in migration: INPUT_DIR sai
-- `CUDA out of memory` (GPU): reduce batch size
+- API container restarting (CrashLoopBackOff): check Qdrant connectivity
+- `Connection refused [Errno 111]` in logs: Qdrant down hoặc `QDRANT_URL` sai
+- `/readyz` liên tục 503: collection chưa tồn tại hoặc Qdrant mất kết nối
+- `CUDA out of memory` (GPU): giảm concurrent requests, bật `RERANK_PROVIDER=none`
 
 ## 7. Capacity Planning
 
 | Tài nguyên | Dự kiến dùng | Ghi chú |
 |---|---|---|
-| RAM per API container | 6-10 GB | 2 model (embed+rerank) loaded |
-| RAM per Qdrant | 1-4 GB | Phụ thuộc số lượng vector |
+| RAM per API container (no rerank) | 4-6 GB | Chỉ BGE-m3 embed loaded |
+| RAM per API container (rerank bge) | 6-10 GB | BGE-m3 + BGE-reranker-v2-m3 loaded |
+| RAM per Qdrant | 1-4 GB | Tuỳ số vector |
 | Disk per Qdrant | 100MB - 10GB | Tuỳ dataset |
 | CPU per request | 1-2 core seconds | Embedding CPU-bound |
 | HF model cache | ~5 GB | `~/.cache/huggingface` volume |
 
 ## 8. Updating Models
 
-Cập nhật model embedding/reranker:
+Cập nhật model embedding:
 
 1. Update `.env`:
    ```env
-   AU_EMBED_MODEL_NAME=<new-model>
-   AU_RERANK_MODEL_NAME=<new-reranker>
+   EMBEDDING_MODEL=<new-model>
+   EMBEDDING_SIZE=<new-dim>
    ```
-2. Rebuild container (cache thường dùng model mới download):
-   ```powershell
+2. Rebuild container:
+   ```bash
    docker compose build --no-cache && docker compose up -d
    ```
-3. Nếu `embedding_size` thay đổi, cần recreate Qdrant collection (xóa + migrate lại).
+3. **Repo ingestion ngoài** cần re-create collection với `EMBEDDING_SIZE` mới
+   và re-upsert toàn bộ data.
 
 ## 9. Cleanup
 
-```powershell
+```bash
 # Docker housekeeping
 docker system prune -f          # xóa stopped containers, unused networks
 docker builder prune -f         # xóa build cache
 
-# Xóa checkpoint (nếu muốn re-run migration từ đầu)
-Remove-Item migration_checkpoint.jsonl, chunk_checkpoint.jsonl
-
 # Xóa HF model cache (sẽ re-download)
-Remove-Item -Recurse ~/.cache/huggingface/models--BAAI--*
+rm -rf ~/.cache/huggingface/models--BAAI--*
+
+# Không có migration script / checkpoint files để xóa trong repo này
 ```

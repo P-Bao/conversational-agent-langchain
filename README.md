@@ -1,12 +1,31 @@
-# Conversational RAG Agent (v6 Retrieval-Only)
+# Retrieval & Search API (v7.0.0)
 
-Backend RAG retrieval service: trả về context (documents) cho downstream LLMs bằng model BGE-m3 (dense + sparse lexical weights) và BGE-reranker-v2-m3.
+Backend RAG retrieval service: trả về context (documents) cho downstream LLMs bằng model BGE-m3 (dense + sparse lexical weights) và BGE-reranker v2-m3 (optional). Branch `feature/retrieval-search-only` — chỉ retrieval & search, ingestion do hệ thống ngoài quản lý.
 
-## Features (v6.0.0)
-- **Retrieval-Only API**: `/rag` và `/rag/stream` trả về danh sách các document chunks đã qua hybrid retrieval + rerank (không sinh answer ở backend RAG).
+## Features (v7.0.0)
+
+- **Retrieval-Only API**: `/rag` và `/rag/stream` trả về danh sách các document chunks đã qua hybrid retrieval + optional rerank (không sinh answer ở backend).
+- **Direct Semantic Search**: `/semantic/search` — hybrid search không qua graph pipeline.
+- **Health checks**: `/healthz` (liveness) + `/readyz` (Qdrant + collection readiness) cho Docker / Kubernetes.
 - **BGE-m3 Multi-functional Embedding**: Một model `BAAI/bge-m3` cho cả dense (1024-dim) và sparse (lexical weights) qua named vectors Qdrant (`bge-m3-sparse`).
-- **BGE Reranker v2-m3**: Multilingual reranker cho tiếng Việt và đa ngôn ngữ.
-- **DeepEval với Qwen Self-host**: Suite đánh giá `ContextualPrecision` và `ContextualRecall` cùng custom locator verification dùng Qwen OpenAI-compatible API.
+- **Optional BGE Reranker v2-m3**: Mặc định `RERANK_PROVIDER=none` (passthrough → tiết kiệm ~2GB RAM). Bật qua `RERANK_PROVIDER=bge`.
+- **LangGraph Graph (giữ nguyên)**: Pipeline retrieval 1-node `retriever` → END, dùng cho `/rag/`.
+- **DeepEval với Qwen Self-host**: Suite đánh giá `ContextualPrecision` và `ContextualRecall` chạy qua TestClient `POST /rag/`.
+
+## Endpoints
+
+| Method | Path | Mô tả |
+|---|---|---|
+| GET | `/` | Welcome |
+| GET | `/healthz` | Liveness probe |
+| GET | `/readyz` | Readiness probe (Qdrant OK + collection tồn tại) |
+| POST | `/rag/` | Retrieval qua LangGraph + optional rerank |
+| POST | `/rag/stream` | NDJSON stream của `/rag/` |
+| POST | `/semantic/search` | Direct hybrid search (no rerank) |
+
+> **Endpoints đã bỏ (chuyển sang repo ingestion ngoài):** `POST /collection/create/{name}`,
+> `POST /embeddings/documents`, `POST /embeddings/string/`, `DELETE /embeddings/delete/{source}`.
+> Repo này chỉ đọc Qdrant.
 
 ## Documentation
 
@@ -14,7 +33,7 @@ Bộ tài liệu bàn giao đầy đủ tại [`docs/`](docs/README.md):
 
 | Lĩnh vực | File |
 |---|---|
-| Kien trúc | [ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Kiến trúc | [ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Cài đặt | [SETUP.md](docs/SETUP.md) |
 | Triển khai Docker | [DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | API Reference | [API_REFERENCE.md](docs/API_REFERENCE.md) |
@@ -32,38 +51,72 @@ Bộ tài liệu bàn giao đầy đủ tại [`docs/`](docs/README.md):
 
 ## Quickstart
 
-1. Sao chép `template.env` thành `.env` và thiết lập các biến môi trường:
+1. Sao chép `template.env` thành `.env` (cập nhật `QDRANT_URL`, `QDRANT_COLLECTION_NAME`):
    ```bash
    cp template.env .env
    ```
 
-2. Chạy Qdrant & backend API bằng `uv`:
+2. Sync dependencies và chạy:
    ```bash
    uv sync
    uv run uvicorn agent.api:app --reload --port 8001
    ```
 
+3. Verify health:
+   ```bash
+   curl http://localhost:8001/healthz
+   # {"status":"ok"}
+
+   curl http://localhost:8001/readyz
+   # {"status":"ready","collection":"documents"}   (nếu Qdrant + collection OK)
+   ```
+
+4. Search thử:
+   ```bash
+   curl -X POST http://localhost:8001/semantic/search \
+     -H "Content-Type: application/json" \
+     -d '{"query":"test","k":3,"collection_name":"documents"}'
+   ```
+
 ## Architecture
 
 ```
-User Query -> REST /rag -> Qdrant Hybrid Search (BGE-m3 dense + sparse) -> BGE Reranker v2-m3 -> RetrievalResponse
+Caller / Client
+    |
+    v
+Retrieval & Search API (FastAPI :8001)
+    |
+    GET  /healthz            (liveness - always 200 if process up)
+    GET  /readyz             (Qdrant connectivity + collection)
+    POST /semantic/search    (direct hybrid search, no graph)
+    POST /rag/               (LangGraph: retriever + optional rerank)
+    POST /rag/stream         (NDJSON stream)
+    |
+    +-- BGE-m3 Dense  Embed (1024)
+    +-- BGE-m3 Sparse Embed (lex)
+    |
+    v
+Qdrant (Hybrid Search, RRF / DBSF)  <-- collection do he ngoai quan ly
 ```
-
-| Route | Method | Description |
-| ----- | ------ | ----------- |
-| `/rag/` | POST | Trả về `RetrievalResponse(query, documents)` |
-| `/rag/stream` | POST | Stream NDJSON các sự kiện `status` và `documents` |
-| `/semantic/search` | POST | Direct semantic search endpoint |
 
 ## Testing & Evaluation
 
-- **Unit tests**:
+- **Unit tests** (61/61 pass ở v7.0.0):
   ```bash
   uv run pytest tests/unit_tests -q
   ```
 
-- **Qwen DeepEval**:
+- **Integration tests**:
   ```bash
-  $env:ALLOW_NETWORK_TESTS="1"
-  uv run pytest tests/test_rag_deepeval_qwen.py -m qwen -vv
+  uv run pytest tests/test_integration.py
+  ```
+
+- **E2E live**:
+  ```bash
+  RUN_LIVE_E2E=1 uv run pytest tests/test_stream.py
+  ```
+
+- **Qwen / NVIDIA NIM DeepEval**:
+  ```bash
+  ALLOW_NETWORK_TESTS=1 uv run pytest tests/test_rag_deepeval_qwen.py -m qwen -vv
   ```

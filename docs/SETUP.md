@@ -1,4 +1,4 @@
-# Hướng Dẫn Cài Đặt — Conversational Agent LangChain v6.0.0
+# Hướng Dẫn Cài Đặt — Retrieval & Search API v7.0.0
 
 ## 1. Yêu Cầu Hệ Thống
 
@@ -7,21 +7,22 @@
 | Python | 3.13+ | Bắt buộc (uv package manager) |
 | uv | 0.5+ | Project package manager |
 | Docker + Docker Compose | Docker 24+, Compose v2 | Cho production deployment |
-| Qdrant | 1.18+ | Vector database chạy riêng biệt |
+| Qdrant | 1.18+ | Vector database chạy riêng biệt, **collection do hệ ngoài dựng** |
 | GPU (CUDA) | Optional | Không bắt buộc — CPU fallback OK, chậm hơn 3-5x |
 
 ## 2. Cài Đặt Local (Development)
 
 ### Bước 1: Clone Repository
 
-```powershell
+```bash
 git clone <repo-url> conversational-agent-langchain
 cd conversational-agent-langchain
+git checkout feature/retrieval-search-only
 ```
 
 ### Bước 2: Cài uv (nếu chưa có)
 
-```powershell
+```bash
 # Windows (winget)
 winget install astral.uv
 
@@ -34,7 +35,7 @@ uv --version
 
 ### Bước 3: Sync Dependencies
 
-```powershell
+```bash
 uv sync
 ```
 
@@ -43,95 +44,116 @@ Lệnh này tạo virtual env `.venv/` và cài đầy đủ dependencies trong 
 
 ### Bước 4: Tạo .env từ template
 
-```powershell
-copy template.env .env
+```bash
+cp template.env .env
 ```
 
-Sửa `.env`:
+Sửa `.env` (tối thiểu cho dev):
 
 ```env
-# === Qdrant ===
-QDRANT_URL=http://localhost       # Nếu Qdrant chạy local trên host
+# === Qdrant (collection phải có sẵn) ===
+QDRANT_URL=http://localhost
 QDRANT_PORT=6333
 QDRANT_COLLECTION_NAME=documents
 
 # === Embedding (giữ mặc định) ===
-AU_EMBED_MODEL_NAME=BAAI/bge-m3
-AU_EMBED_DIMENSION=1024
+EMBEDDING_PROVIDER=bge
+EMBEDDING_MODEL=BAAI/bge-m3
+EMBEDDING_SIZE=1024
+
+# === Default không rerank ===
+RERANK_PROVIDER=none
 ```
 
 ### Bước 5: Verify
 
-```powershell
+```bash
 uv run uvicorn agent.api:app --reload --port 8001
 ```
 
-Mở `http://localhost:8001/docs` để xem Swagger UI. Nếu thấy API response `500`,
-kiểm tra Qdrant đã chạy chưa.
+Mở `http://localhost:8001/docs` để xem Swagger UI. Kiểm tra:
+
+```bash
+# Liveness
+curl http://localhost:8001/healthz
+# {"status":"ok"}
+
+# Readiness (cần Qdrant + collection)
+curl http://localhost:8001/readyz
+```
+
+Nếu `/readyz` trả về `503 collection_missing`, bạn cần nạp data vào Qdrant
+qua hệ thống ingestion ngoài trước (xem [DATA_INGESTION.md](DATA_INGESTION.md)).
 
 ## 3. Cài Đặt Docker (Production / Test)
 
-### Bước 1: Qdrant
+### Bước 1: Network + Qdrant
 
-Xem hướng dẫn chi tiết ở [DEPLOYMENT.md](DEPLOYMENT.md). Cơ bản:
-
-```powershell
+```bash
+docker network create test_network
 cd ../qdrant_docker
 docker compose up -d
 ```
 
 ### Bước 2: Build & Start API
 
-```powershell
+```bash
 cd conversational-agent-langchain
 docker compose up --build -d
 ```
 
 ### Bước 3: Kiểm Tra
 
-```powershell
-curl http://localhost:8001/
-# Response: "Welcome to the RAG Backend. Please navigate to /docs for the OpenAPI!"
+```bash
+curl http://localhost:8001/healthz
+# {"status":"ok"}
+curl http://localhost:8001/readyz
+# (nếu collection tồn tại) {"status":"ready","collection":"documents"}
 curl http://localhost:8001/docs
 ```
 
-## 4. Cài Đặt Frontend (Streamlit, Optional)
+## 4. Frontend (Streamlit)
 
-```powershell
-cd frontend
-uv sync
-uv run streamlit run assistant.py --theme.base="dark"
-```
-
-Frontend chạy tại `http://localhost:8501`, gọi backend qua `BACKEND_HOST:BACKEND_PORT`
-(mặc định `localhost:8001`).
+> **Repo frontend đã chuyển sang repository riêng** (vì v7 cắt ingest/CRUD
+> frontend cũ cần nhiều feature ingestion). Repo frontend mới đặt tại nơi
+> khác — liên hệ team frontend để biết URL clone.
 
 ## 5. Kiểm Tra Kết Nối
 
 Sau khi setup, chạy smoke test:
 
-```powershell
-# Ping API
-curl http://localhost:8001/
+```bash
+# 1. Liveness (luôn 200 nếu process sống)
+curl http://localhost:8001/healthz
 
-# Qdrant health check (nếu cùng host)
+# 2. Readiness (phải 200 + ready)
+curl http://localhost:8001/readyz
+
+# 3. Search thử
+curl -X POST http://localhost:8001/semantic/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"test","k":3,"collection_name":"documents"}'
+
+# 4. Qdrant health (nếu cùng host)
 curl http://localhost:6333/
 
-# Chạy unit tests
+# 5. Unit tests
 uv run pytest tests/unit_tests -q
 ```
 
 ## 6. Các Tình Huống Thường Gặp
 
-### Connection refused với Qdrant
+### `503 collection_missing` ở `/readyz`
+
+Nguyên nhân: Collection do hệ thống ngoài dựng chưa tồn tại, hoặc `QDRANT_COLLECTION_NAME`
+không khớp. Liên hệ team ingestion hoặc tạo qua Qdrant Dashboard.
+
+### `503 qdrant_unreachable` ở `/readyz`
 
 Nguyên nhân: Qdrant chưa chạy hoặc sai host/port. Kiểm tra:
 
-```powershell
-# Qdrant đang run?
-docker ps | findstr qdrant
-
-# Qdrant phản hồi?
+```bash
+docker ps | grep qdrant
 curl http://localhost:6333/
 
 # Trong container, localhost là container, không phải host
@@ -142,15 +164,20 @@ Chi tiết xem [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ### Embedding load chậm
 
-Lần đầu chạy, model BGE-m3 (2.2GB) và BGE-reranker-v2-m3 được tự động tải từ
-HuggingFace Hub về `~/.cache/huggingface`. Có thể mất 2-5 phút tùy bandwidth.
-Các lần sau dùng cache nên nhanh.
+Lần đầu chạy, model BGE-m3 (2.2GB) được tự động tải từ HuggingFace Hub về
+`~/.cache/huggingface`. Có thể mất 2-5 phút tuỳ bandwidth.
+
+Mặc định reranker **đã TẮT** (`RERANK_PROVIDER=none`) nên không cần download
+BGE-reranker-v2-m3. Nếu bật reranker, tốn thêm 2.2GB.
+
+Nếu RERANK_PROVIDER=bge → phải chạy startup `Loading BGE-reranker-v2-m3 model`,
+mất thời gian tương tự.
 
 ### Lỗi torch / CUDA
 
 Nếu không có GPU, code tự động dùng CPU (`use_fp16=False`). Không cần cài CUDA.
-Nếu gặp lỗi torch, kiểm tra:
+Nếu gặp lỗi torch:
 
-```powershell
+```bash
 uv run python -c "import torch; print(torch.__version__)"
 ```

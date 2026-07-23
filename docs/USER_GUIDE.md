@@ -1,22 +1,38 @@
-# Hướng Dẫn Sử Dụng API — User Guide
+# Hướng Dẫn Sử Dụng API — User Guide (v7.0.0)
 
-> Tài liệu dành cho end-user muốn gọi API RAG để lấy context cho ứng dụng của mình.
+> Tài liệu dành cho end-user / caller muốn gọi API retrieval & search.
 
 ## 1. API Là Gì?
 
 API này là một **Retrieval Service** (dịch vụ truy xuất tài liệu). Nó nhận câu hỏi
-của bạn, tìm kiếm trong cơ sở dữ liệu các đoạn tài liệu liên quan nhất (chunks),
+của bạn, tìm kiếm trong cơ sở dữ liệu Qdrant các đoạn tài liệu liên quan nhất (chunks),
 sắp xếp theo độ relevance, và trả về cho bạn.
 
 **API KHÔNG tự sinh câu trả lời.** Nó chỉ trả về các đoạn tài liệu gốc để bạn
 (hoặc LLM downstream) tự tổng hợp câu trả lời.
 
+> **Lưu ý v7.0.0:** Các endpoint upload file / tạo collection / xoá document đã
+> được chuyển sang hệ thống ngoài. API chỉ cung cấp retrieval & search.
+
 ## 2. Kết Nối Nhanh
 
 ### Yêu cầu:
 
-- API endpoint URL (ví dụ: `http://rag-api.organization.com:8001`)
+- API endpoint URL (ví dụ: `http://rag-api.example.com:8001`)
 - API đã được deploy và chạy
+- Qdrant đã có sẵn collection (do hệ thống ingestion ngoài quản lý)
+
+### Health check trước:
+
+```bash
+# Process còn sống?
+curl http://localhost:8001/healthz
+# {"status":"ok"}
+
+# Qdrant + collection ready?
+curl http://localhost:8001/readyz
+# {"status":"ready","collection":"documents"}
+```
 
 ### Ví dụ Gọi API (cURL):
 
@@ -96,25 +112,27 @@ console.log(data.documents);
 
 ## 4. Các Loại Dữ Liệu Trong Response
 
-Mỗi document trong mảng `documents` có:
+Mỗi document trong mảng `documents`:
 
 | Field | Luôn có? | Mô tả |
 |---|---|---|
-| `text` | Yes | Nội dung chunk (có thể cắt ngắn ~750-1500 ký tự) |
+| `text` | Yes | Nội dung chunk |
 | `page` | Maybe | Số trang gốc (nếu là PDF) |
 | `source` | Maybe | Tên file hoặc URL nguồn |
-| `score` | Yes | Relevance score (0-1) từ reranker. Cao hơn = relevant hơn. Sắp xếp giảm dần. |
+| `score` | Maybe (null nếu no rerank) | Relevance score (0-1) từ reranker hoặc null nếu RERANK_PROVIDER=none |
 | `metadata` | Yes | Object chứa thông tin bổ sung (document_id, global_id, chunk_index...). Dùng cho traceability. |
 
-## 5. Collection (Bộ Sưu Tập)
+## 5. Collection
 
-Dữ liệu được tổ chức thành các **collections**. Mỗi collection chứa documents của
-một chủ đề / tổ chức / khoá học.
+Dữ liệu được tổ chức thành các **collections** trên Qdrant. Mỗi collection
+chứa documents của một chủ đề / tổ chức / khoá học.
 
-- Mặc định: `collection_name = "documents"`
-- Nếu có nhiều collection, gọi API với `collection_name` khác nhau.
+- Mặc định: `collection_name = "default"` (cấu hình qua `QDRANT_COLLECTION_NAME`)
+- API chấp nhận `collection_name` khác nhau cho mỗi request.
+- **Collections do hệ thống ngoài dựng.** API không có endpoint tạo / xoá collection.
 
-Để xem danh sách collection: `http://localhost:6333/collections` (Qdrant dashboard).
+Để xem danh sách collection: `http://<qdrant>:6333/collections` (Qdrant
+dashboard) hoặc hỏi team ingestion.
 
 ## 6. Streaming (Đọc Từng Dòng)
 
@@ -140,10 +158,9 @@ with httpx.stream(
                 print(f"  - {doc['text'][:100]}...")
 ```
 
-## 7. Direct Search (Không Rerank)
+## 7. Direct Search (Không Rerank, Không Graph)
 
-Endpoint `/semantic/search` trả về kết quả nhanh hơn (bỏ qua reranker nhưng
-không có metadata đầy đủ).
+Endpoint `/semantic/search` trả về kết quả nhanh hơn (bỏ qua graph pipeline + rerank):
 
 ```bash
 curl -X POST http://localhost:8001/semantic/search \
@@ -151,37 +168,68 @@ curl -X POST http://localhost:8001/semantic/search \
   -d '{"query": "attention is all you need", "k": 3, "collection_name": "documents"}'
 ```
 
-Phù hợp khi cần kết quả nhanh, không cần rerank chính xác.
+Phù hợp khi cần kết quả nhanh, không cần rerank.
 
-## 8. Error Handling
+## 8. Health Endpoint Cho Monitoring
+
+Nếu bạn dùng API làm backend cho app, có thể monitor bằng:
+
+```python
+def is_api_ready() -> bool:
+    try:
+        r = httpx.get("http://localhost:8001/readyz", timeout=5)
+        return r.status_code == 200 and r.json().get("status") == "ready"
+    except httpx.RequestError:
+        return False
+
+assert is_api_ready(), "RAG API chưa ready — kiểm tra Qdrant + collection"
+```
+
+## 9. Error Handling
 
 | HTTP Status | Nghĩa | Xử lý |
 |---|---|---|
 | 200 | Success | Parse response JSON |
-| 400 | Bad request (thiếu params, sai format) | Kiểm tra request body |
+| 404 | Endpoint đã bỏ ở v7 hoặc sai path | Xem [API_REFERENCE.md](API_REFERENCE.md) để biết endpoint hợp lệ |
+| 422 | Validation error (sai schema) | Kiểm tra request body |
 | 500 | Server error | Báo admin, xem log: `docker logs conversational-rag-api --tail 20` |
+| 503 | Readiness fail (chỉ `/readyz`) | Qdrant down hoặc collection missing |
 | Connection refused | API chưa chạy hoặc sai URL | Kiểm tra URL + port |
 
-## 9. FAQs
+## 10. FAQs
 
 **Q: Làm sao để biết API đang chạy?**
 
-A: `curl http://localhost:8001/` trả về `"Welcome to the RAG Backend..."`
+A: `curl http://localhost:8001/healthz` trả về `{"status":"ok"}`.
+
+**Q: Làm sao biết Qdrant + collection ready?**
+
+A: `curl http://localhost:8001/readyz` → 200 + `{"status":"ready", "collection":"..."}`.
 
 **Q: Kết quả trả về rỗng?**
 
-A: Collection chưa có dữ liệu hoặc `collection_name` sai. Kiểm tra tại Qdrant dashboard.
+A: Collection chưa có dữ liệu hoặc `collection_name` sai. Liên hệ team
+ingestion hoặc kiểm tra tại Qdrant dashboard.
 
 **Q: Score cao = document rất phù hợp?**
 
 A: Score từ BGE-reranker (normalized 0-1). Score cao hơn là relevant hơn.
-Tuy nhiên không phải threshold tuyệt đối — cùng query, scores so sánh giữa các documents.
+Tuy nhiên không phải threshold tuyệt đối — cùng query, scores so sánh giữa
+các documents. Nếu `RERANK_PROVIDER=none`, `score` sẽ là `null` (chỉ có raw
+retrieval score trong metadata nếu có).
 
-**Q: Có thể upload dữ liệu của tôi không?**
+**Q: Tôi muốn upload file PDF của tôi lên hệ thống?**
 
-A: Được — dùng endpoint `POST /embeddings/documents`. Xem [API_REFERENCE.md](API_REFERENCE.md) section 6.
+A: Repo này không upload được. Liên hệ team ingestion để nạp data qua hệ
+thống của họ.
+
+**Q: Tôi muốn chạy test golden questions mà chưa có collection?**
+
+A: Golden questions dùng cho DeepEval — cần Qdrant có data thật + collection
+đã được ingestion ngoài dựng sẵn. Liên hệ team ingestion trước khi chạy
+EVALUATION.
 
 **Q: Timeout?**
 
-A: Lần đầu API gọi có thể chậm do model load (2-5 phút). Các request sau nhanh hơn.
-Nếu timeout, tăng timeout lên 120s cho request đầu tiên.
+A: Lần đầu API gọi có thể chậm do model load (2-5 phút). Các request sau
+nhanh hơn. Nếu timeout, tăng timeout lên 120s cho request đầu tiên.

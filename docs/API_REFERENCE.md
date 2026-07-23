@@ -1,19 +1,57 @@
-# API Reference — Conversational Agent LangChain v6.0.0
+# API Reference — Retrieval & Search API v7.0.0
 
 > Base URL: `http://localhost:8001`
 > OpenAPI: `http://localhost:8001/docs` (Swagger UI)
+>
+> Repo chỉ retrieval & search. Collection / embedding / delete thuộc hệ thống
+> ngoài (xem [DATA_INGESTION.md](DATA_INGESTION.md)).
 
-## 1. GET `/` — Health Check
+## 1. GET `/` — Welcome
 
 **Response** (200):
 ```
 Welcome to the RAG Backend. Please navigate to /docs for the OpenAPI!
 ```
 
-## 2. POST `/rag/` — Retrieval Query
+## 2. GET `/healthz` — Liveness probe
 
-Lấy danh sách document chunks liên quan đến query của người dùng.
-Không sinh câu trả lời — chỉ trả về context.
+Trả về 200 ngay khi process phục vụ HTTP. Không gọi Qdrant.
+
+**Response** (200):
+```json
+{ "status": "ok" }
+```
+
+Dùng cho Docker `healthcheck` (process còn sống).
+
+## 3. GET `/readyz` — Readiness probe
+
+Kiểm tra Qdrant có sẵn sàng + collection đang khai báo tồn tại.
+
+**Response** (200):
+```json
+{ "status": "ready", "collection": "default" }
+```
+
+**Response** (503 — collection missing):
+```json
+{ "status": "fail", "reason": "collection_missing", "collection": "default" }
+```
+
+**Response** (503 — Qdrant unreachable):
+```json
+{ "status": "fail", "reason": "qdrant_unreachable", "details": "Connection refused" }
+```
+
+**Response** (503 — Qdrant non-2xx):
+```json
+{ "status": "fail", "reason": "qdrant_error", "details": "..." }
+```
+
+## 4. POST `/rag/` — Retrieval Query
+
+Lấy danh sách document chunks liên quan đến query. Không sinh câu trả lời.
+Pipeline: LangGraph (`retriever` node) -> hybrid search -> optional rerank.
 
 **Request Body** (`RAGRequest`):
 
@@ -49,17 +87,15 @@ Không sinh câu trả lời — chỉ trả về context.
 }
 ```
 
+Khi `RERANK_PROVIDER=none` thì `score` có thể `null` (chỉ retrieval thuần).
+Khi `RERANK_PROVIDER=bge` thì `score` là rerank score đã chuẩn hoá về [0, 1].
+
 **Curl example**:
 
-```powershell
-$body = @{
-    messages = @(@{ role = "user"; content = "What is attention?" })
-    collection_name = "documents"
-} | ConvertTo-Json -Compress
-
-curl -X POST http://localhost:8001/rag/ `
-  -H "Content-Type: application/json" `
-  -d $body
+```bash
+curl -X POST http://localhost:8001/rag/ \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "What is attention?"}], "collection_name": "documents"}'
 ```
 
 **Python example**:
@@ -76,7 +112,7 @@ for doc in data["documents"]:
     print(f"[{doc['score']:.2f}] {doc['text'][:100]}...")
 ```
 
-## 3. POST `/rag/stream` — Streaming Retrieval
+## 5. POST `/rag/stream` — Streaming Retrieval
 
 Stream kết quả retrieval dạng NDJSON. Client đọc từng dòng.
 
@@ -106,9 +142,10 @@ async with httpx.AsyncClient() as client:
                 print(f"Received {len(event['data'])} documents")
 ```
 
-## 4. POST `/semantic/search` — Direct Semantic Search
+## 6. POST `/semantic/search` — Direct Semantic Search
 
-Tìm kiếm trực tiếp hybrid search, không qua graph pipeline (không rerank, không full metadata).
+Tìm kiếm trực tiếp hybrid search, không qua graph pipeline (không rerank,
+không graph). Phù hợp khi cần kết quả nhanh.
 
 **Request Body** (`SearchParams`):
 
@@ -132,126 +169,38 @@ Tìm kiếm trực tiếp hybrid search, không qua graph pipeline (không reran
 ]
 ```
 
-## 5. POST `/collection/create/{name}` — Create Collection
-
-Tạo collection mới trong Qdrant với dense + sparse vector config.
-
-**Path params**: `collection_name` (string), `embeddings_size` (query, int, 1-5000).
-
-**Curl**:
-
-```powershell
-curl -X POST "http://localhost:8001/collection/create/my_collection?embeddings_size=1024"
-```
-
-**Response** (200):
-
+Khi không có document nào, trả về:
 ```json
-{ "message": "Collection my_collection created." }
+{ "message": "No documents found." }
 ```
 
-## 6. POST `/embeddings/documents` — Upload & Embed Files
-
-Upload PDF/txt files → chunk → embed → upsert vào Qdrant collection.
-
-**Query params**: `collection_name` (string, required), `file_ending` (default `.pdf`).
-
-**Request**: `multipart/form-data` với field `files` (multiple files).
-
-**Curl**:
-
-```powershell
-curl -X POST "http://localhost:8001/embeddings/documents?collection_name=default&file_ending=.pdf" `
-  -F "files=@test.pdf" `
-  -F "files=@paper.pdf"
-```
-
-**Python**:
-
-```python
-import httpx
-
-with open("test.pdf", "rb") as f:
-    files = {"files": ("test.pdf", f, "application/pdf")}
-    resp = httpx.post(
-        "http://localhost:8001/embeddings/documents",
-        params={"collection_name": "default", "file_ending": ".pdf"},
-        files=files,
-    )
-print(resp.json())  # {"status": "success", "files": ["test.pdf"]}
-```
-
-**Response** (200, `EmbeddingResponse`):
-
-```json
-{
-  "status": "success",
-  "files": ["attention.pdf", "transformer.pdf"]
-}
-```
-
-## 7. POST `/embeddings/string/` — Embed Text String
-
-Embed raw text string (viết thành file .txt tạm rồi xử lý).
-
-**Query params**: `collection_name` (string, required).
-
-**Request Body** (`EmbeddTextRequest`):
-
-```json
-{
-  "text": "Attention is all you need. The transformer architecture...",
-  "file_name": "transformer_intro",
-  "separator": "###"
-}
-```
-
-**Response** (200, `EmbeddingResponse`):
-
-```json
-{ "status": "success", "files": ["transformer_intro"] }
-```
-
-## 8. DELETE `/embeddings/delete/{source}` — Delete by Source
-
-Xóa tất cả points trong Qdrant có `metadata.source == source`.
-
-**Query params**: `collection_name` (string, required).
-
-**Path params**: `source` — giá trị metadata.source cần xóa.
-
-**Curl**:
-
-```powershell
-curl -X DELETE "http://localhost:8001/embeddings/delete/old_document.pdf?collection_name=documents"
-```
-
-**Response** (200, `UpdateResult`):
-
-```json
-{
-  "result": "acknowledged",
-  "status": "completed",
-  "operation_id": 0
-}
-```
-
-## 9. Summary Table
+## 7. Summary Table
 
 | Method | Path | Input | Output | Mô tả |
 |---|---|---|---|---|
-| GET | `/` | — | plain text | Health check |
-| POST | `/rag/` | `RAGRequest` | `RetrievalResponse` | Hybrid retrieval + rerank |
+| GET | `/` | — | plain text | Welcome |
+| GET | `/healthz` | — | `{status: ok}` | Liveness probe |
+| GET | `/readyz` | — | `{status, collection}` hoặc `{status, reason}` | Readiness probe (Qdrant + collection) |
+| POST | `/rag/` | `RAGRequest` | `RetrievalResponse` | Hybrid retrieval + optional rerank (LangGraph) |
 | POST | `/rag/stream` | `RAGRequest` | NDJSON stream | Streaming retrieval |
-| POST | `/semantic/search` | `SearchParams` | `SearchResponse[]` | Direct search (no rerank) |
-| POST | `/collection/create/{name}` | path + query | JSON | Create Qdrant collection |
-| POST | `/embeddings/documents` | multipart | `EmbeddingResponse` | Upload file → embed |
-| POST | `/embeddings/string/` | `EmbeddTextRequest` | `EmbeddingResponse` | Embed raw text string |
-| DELETE | `/embeddings/delete/{source}` | path + query | `UpdateResult` | Delete by source metadata |
+| POST | `/semantic/search` | `SearchParams` | `SearchResponse[]` | Direct hybrid search (no rerank) |
 
-## 10. Error Handling
+## 8. Endpoints Đã Loại Bỏ (v7)
 
-Tất cả endpoints đều có global exception handler (`agent/api.py:42-49`).
+Các endpoint sau **đã được loại bỏ** khỏi repo này — chúng thuộc về hệ thống
+ngoài quản lý Qdrant. Tất cả trả về `404 Not Found`:
+
+- `POST /collection/create/{name}`
+- `POST /embeddings/documents`
+- `POST /embeddings/string/`
+- `DELETE /embeddings/delete/{source}`
+
+Migration script `python -m agent.scripts.migrate_dump_to_qdrant` cũng đã
+chuyển sang repo ingestion ngoài.
+
+## 9. Error Handling
+
+Tất cả endpoints đều có global exception handler (`agent/api.py`).
 
 **Response** (500):
 
@@ -267,6 +216,7 @@ Common HTTP status codes:
 | Code | Meaning |
 |---|---|
 | 200 | Success |
-| 400 | Bad request (missing params, validation error) |
-| 404 | Not found (trả về mặc định FastAPI) |
-| 500 | Internal error (xem details + container logs) |
+| 404 | Not found — endpoint đã bị loại bỏ ở v7 hoặc sai path |
+| 422 | Validation error (request body sai schema) |
+| 500 | Internal error (xem `details` + container logs) |
+| 503 | Readiness failure (chỉ `/readyz`) |

@@ -1,4 +1,4 @@
-# Hướng Dẫn Phát Triển — Development Guide
+# Hướng Dẫn Phát Triển — Development Guide (v7.0.0)
 
 ## 1. Project Structure
 
@@ -6,49 +6,38 @@
 conversational-agent-langchain/
 ├── src/agent/
 │   ├── __init__.py
-│   ├── api.py                      # FastAPI app entry
+│   ├── api.py                      # FastAPI app entry — only includes /rag, /semantic, /healthz, /readyz
 │   ├── backend/
-│   │   ├── graph.py                # LangGraph StateGraph pipeline
+│   │   ├── graph.py                # LangGraph StateGraph pipeline (goc giu nguyen)
 │   │   ├── state.py                # AgentState TypedDict
-│   │   ├── nodes/retrieval.py      # retrieve_documents node
-│   │   └── services/embedding_management.py
+│   │   └── nodes/retrieval.py      # retrieve_documents node (gọi get_retriever + get_reranker)
 │   ├── data_model/
-│   │   ├── request_data_model.py   # SearchParams, RAGRequest, EmbeddTextRequest
-│   │   ├── response_data_model.py  # SearchResponse, RetrievalResponse, RetrievedDoc
-│   │   └── internal_model.py
+│   │   ├── request_data_model.py   # SearchParams, ChatMessages, RAGRequest
+│   │   └── response_data_model.py  # SearchResponse, RetrievalResponse, RetrievedDoc, Status, EmbeddingResponse (legacy)
 │   ├── routes/
-│   │   ├── rag.py                  # POST /rag/, /rag/stream
+│   │   ├── rag.py                  # POST /rag/, /rag/stream (LangGraph)
 │   │   ├── search.py               # POST /semantic/search
-│   │   ├── collection.py           # POST /collection/create/{name}
-│   │   ├── embeddings.py           # POST /embeddings/documents, /embeddings/string/
-│   │   └── delete.py               # DELETE /embeddings/delete/{source}
-│   ├── scripts/
-│   │   ├── migrate_dump_to_qdrant.py
-│   │   ├── chunking.py
-│   │   ├── dump_reader.py
-│   │   └── load_dummy_data.py
+│   │   └── health.py               # GET /healthz, /readyz
 │   └── utils/
-│       ├── config.py               # Pydantic Settings
+│       ├── config.py               # Pydantic Settings (rerank_provider default = "none")
 │       ├── embeddings.py           # BGE-m3 dense + sparse
-│       ├── vdb.py                  # Qdrant client singleton
-│       ├── retriever.py            # Hybrid retriever (RFF/DBSF)
-│       ├── reranker.py             # BGE / Cohere / FlashRank
-│       └── utility.py              # Helpers
-├── frontend/
-│   ├── assistant.py                # Streamlit app
-│   ├── client.py                   # API client
-│   └── pyproject.toml
+│       ├── vdb.py                  # Qdrant client (sync + async) — No collection mgmt
+│       ├── retriever.py            # Hybrid retriever (RRF/DBSF)
+│       └── reranker.py             # get_reranker() — providers: none / bge (cohere+flashrank removed)
 ├── tests/
 │   ├── conftest.py
 │   ├── unit_tests/
 │   ├── vcr/
 │   ├── e2e_tests/
+│   ├── fakes/
+│   ├── test_integration.py
+│   ├── test_stream.py
 │   └── test_rag_deepeval_qwen.py
 ├── config/
 │   └── qdrant.yaml
-├── docs/                           # Tài liệu (bàn giao)
+├── docs/                           # Tai lieu (ban giao v7.0.0)
 ├── .env                            # Secrets (gitignored)
-├── template.env                    # Mẫu env
+├── template.env                    # Mau env
 ├── docker-compose.yml              # API service
 ├── Dockerfile
 ├── pyproject.toml                  # Dependencies + tool config
@@ -56,15 +45,18 @@ conversational-agent-langchain/
 └── ruff.toml                       # Linter config
 ```
 
+> **Đã xoá ở v7** (giờ thuộc hệ ngoài quản lý Qdrant):
+> `backend/services/`, `scripts/`, `utils/utility.py`, `data_model/internal_model.py`,
+> `routes/{collection,delete,embeddings}.py`, `frontend/`.
+
 ## 2. Code Style & Conventions
 
 ### Python:
 
 - Python 3.13+ (`src/agent/`)
 - Type hints bắt buộc (mypy: `disallow_untyped_defs = true`)
-- Docstring kiểu Google/NumPy (ví dụ: `"""Short description.\n\nArgs:\n----\nReturns:\n-------\n"""`)
+- Docstring ngắn gọn (Google/NumPy style)
 - `ruff` cho lint + format (config in `ruff.toml`)
-- `ruff format` để format code (tương đương black)
 - Không thêm comment thừa — chỉ giữ docstring module-level + function-level
 
 ### Import order (theo ruff):
@@ -79,17 +71,18 @@ conversational-agent-langchain/
 |---|---|
 | Module | `embeddings.py`, `vdb.py` |
 | Class | `BGE3Embeddings`, `QdrantClient` (singleton module-level) |
-| Function | `get_embedding_model`, `initialize_vector_db` |
+| Function | `get_embedding_model`, `get_retriever` |
 | Private | `_get_bge3_model`, `_embeddings_cache` |
 | Config field | `embedding_model`, `qdrant_url` |
-| Env var | `AU_EMBED_MODEL_NAME`, `QDRANT_URL` |
+| Env var | `EMBEDDING_MODEL`, `QDRANT_URL` |
 
 ### No circular imports:
 
 - `config.py` không import từ `agent.*` (độc lập)
 - `embeddings.py` import `Config` (đọc model name)
-- `vdb.py` import `Config` + `get_sparse_embedding`
+- `vdb.py` import `Config`
 - `retriever.py` import `Config` + `embeddings` + `vdb`
+- `health.py` import `Config` + `vdb`
 - Routes import từ `utils.*`, `backend.*`, `data_model.*`
 
 ## 3. Adding a New Endpoint
@@ -100,15 +93,15 @@ conversational-agent-langchain/
    ```python
    app.include_router(router=new_router.router, prefix="/new")
    ```
-4. Viết unit test cho logic + VCR cassette cho external calls
-5. Thêm endpoint vào [API_REFERENCE.md](API_REFERENCE.md)
+4. Viết unit test cho logic + integration test qua `TestClient`
+5. Cập nhật [API_REFERENCE.md](API_REFERENCE.md)
 
 ## 4. Adding a New Embedding Provider
 
 Theo pattern có sẵn trong `embeddings.py`:
 
 ```python
-# 1. Thêm case trong get_embedding_model() tại embeddings.py:101-118
+# 1. Thêm case trong get_embedding_model()
 match provider:
     case "bge" | "flagembedding":
         return BGE3Embeddings(_get_bge3_model(cfg))
@@ -126,7 +119,7 @@ my_provider_api_key: str = ""
 
 ## 5. Modifying the Retriever / Reranker Flow
 
-Pipeline nằm trong `src/agent/backend/nodes/retrieval.py`.
+Pipeline graph: `src/agent/backend/nodes/retrieval.py`.
 Thay đổi ở đây ảnh hưởng tới cả `/rag/`, `/rag/stream`, `/semantic/search`.
 
 Để thay đổi behavior:
@@ -141,7 +134,7 @@ Thay đổi ở đây ảnh hưởng tới cả `/rag/`, `/rag/stream`, `/semant
 
 ## 6. Git / Branch Workflow
 
-```powershell
+```bash
 # Feature branch
 git checkout -b feature/my-feature
 
@@ -172,9 +165,8 @@ git commit -m "feat: description"
 
 ## 8. Known Dev Gotchas
 
-- `load_dotenv()` được gọi ở `api.py:14` (trước Config) — env vars từ `.env` có sẵn cho Pydantic Settings.
-- `initialize_all_vector_dbs()` chạy ở module-level của `api.py` — nếu Qdrant down, app crash ngay.
-- `QdrantVectorStore` trong `embeddings.py` viết `local_mode` và `sparse_embedding` param phải match
-  collection schema.
-- Các test dùng `conftest.py` patching `initialize_all_vector_dbs` — nếu thêm Qdrant call ở module-level,
-  nhớ patch trong conftest.
+- `load_dotenv()` được gọi ở `api.py` (trước `Config`) — env vars từ `.env` có sẵn cho Pydantic Settings.
+- **Không có module-level side effect** ở v7 (`vdb.py`, `api.py`). `QdrantClient` được build từ Config nhưng exception nếu Qdrant down sẽ không crash import — chỉ fail khi gọi API.
+- `get_retriever` cache `QdrantVectorStore` theo `collection_name`. Cần `retriever_module._vector_store_cache.clear()` giữa các test nếu muốn kiểm tra `QdrantVectorStore(...)` được tạo lại.
+- Conftest default `RERANK_PROVIDER=none`. Nếu test cần rerank → set env trước `Config(...)` hoặc explicit override.
+- Test deepeval (`test_rag_deepeval_qwen.py`) chạy qua `TestClient.post('/rag/', ...)`, **không gọi `Graph().invoke()` trực tiếp** — dễ test hơn vì không cần mock graph internals.

@@ -1,71 +1,58 @@
-# Cấu Hình (Environment Variables) — v6.0.0
+# Cấu Hình (Environment Variables) — v7.0.0
 
 > Tất cả env vars đều đọc từ `.env` qua `python-dotenv` + Pydantic Settings.
 > Mỗi biến có alias để backward-compat. Default an toàn trong code.
+>
+> **Repo v7 chỉ retrieval & search** — biến ingest / chunking / migration đã
+> được loại bỏ. Xem [API_REFERENCE.md](API_REFERENCE.md) §8.
 
 ## 1. Embedding (Dense)
 
 | Biến | Alias | Default | Mô tả |
 |---|---|---|---|
-| `AU_EMBED_MODEL_NAME` | `EMBEDDING_MODEL` | `BAAI/bge-m3` | Tên model dense trên HuggingFace |
-| `AU_EMBED_DIMENSION` | `EMBEDDING_SIZE` | `1024` | Dense vector dimension. BGE-m3 support 1024 (mặc định) |
-| `EMBEDDING_PROVIDER` | — | `bge` | Provider: `bge`, `flagembedding`, `openai`, `openai-compatible`, `custom` |
-| `EMBEDDING_BASE_URL` | — | `""` | Base URL nếu dùng OpenAI-compatible API cho embedding |
-| `EMBEDDING_API_KEY` | — | `""` | API key cho remote embedding API |
-
-Lưu ý:
-- `bge`/`flagembedding` dùng model local qua FlagEmbedding.
-- `openai-compatible` đòi hỏi `EMBEDDING_BASE_URL` hợp lệ (dùng cho BGE serve qua API).
+| `EMBEDDING_PROVIDER` | — | `bge` | Provider: chỉ `bge` (FlagEmbedding) ở v7 |
+| `EMBEDDING_MODEL` | `AU_EMBED_MODEL_NAME` | `BAAI/bge-m3` | Tên model dense trên HuggingFace |
+| `EMBEDDING_SIZE` | `AU_EMBED_DIMENSION` | `1024` | Dense vector dimension. BGE-m3 = 1024 |
 
 ## 2. Embedding (Sparse)
 
 | Biến | Alias | Default | Mô tả |
 |---|---|---|---|
-| `AU_SPARSE_MODEL_NAME` | `SPARSE_MODEL` | `BAAI/bge-m3` | Model cho sparse lexical weights. Tách env với dense để swap linh hoạt |
-
-Mặc định cùng model với dense (BGE-m3) → 1 instance FlagEmbed chia sẻ.
-Nếu đặt khác, load model riêng (tốn RAM gấp đôi).
+| `SPARSE_MODEL` | `AU_SPARSE_MODEL_NAME` | `BAAI/bge-m3` | Model cho sparse lexical weights. Tách env với dense để swap linh hoạt. Mặc định cùng model với dense → 1 instance FlagEmbed chia sẻ. Nếu đặt khác, load model riêng (tốn RAM gấp đôi). |
 
 ## 3. Retrieval
 
 | Biến | Default | Mô tả |
 |---|---|---|
 | `RETRIEVAL_K` | `40` | Số document lấy từ hybrid search (trước rerank) |
-| `RETRIEVAL_K_RETRY` | `100` | Số document lấy khi `retry_count > 0` (retry handle chưa active trong graph v6) |
+| `RETRIEVAL_K_RETRY` | `100` | Số document lấy khi `retry_count > 0` (retry logic trong graph) |
+| `FUSION_ALGORITHM` (alias `hybrid_fusion`) | `rrf` | Thuật toán fusion: `rrf` (Reciprocal Rank Fusion) hoặc `dbsf` (Distribution-Based Score Fusion) |
 
 ## 4. Reranker
 
 | Biến | Alias | Default | Mô tả |
 |---|---|---|---|
-| `RERANK_PROVIDER` | — | `bge` | Provider: `bge`, `cohere`, `flashrank`, `none` |
+| `RERANK_PROVIDER` | — | `none` | **`none` = passthrough (không load reranker)**; `bge` = local BGE-reranker-v2-m3 |
+| `RERANK_MODEL` | `AU_RERANK_MODEL_NAME` | `BAAI/bge-reranker-v2-m3` | Model reranker trên HuggingFace |
 | `RERANK_TOP_K` | — | `5` | Số document giữ lại sau rerank |
-| `AU_RERANK_MODEL_NAME` | `RERANK_MODEL` | `BAAI/bge-reranker-v2-m3` | Model reranker trên HuggingFace |
-| `RERANK_BASE_URL` | — | `""` | Base URL nếu dùng remote rerank API |
-| `RERANK_API_KEY` | — | `""` | API key cho remote rerank |
 
-## 5. Fusion Algorithm
+> Các provider reranker `cohere` / `flashrank` đã bị loại bỏ ở v7 — không có
+> dependency nào cho chúng.
 
-| Biến | Alias | Default | Mô tả |
-|---|---|---|---|
-| `FUSION_ALGORITHM` | `hybrid_fusion` | `rrf` | `rrf` (Reciprocal Rank Fusion) hoặc `dbsf` (Distribution-Based) |
-| `RRF_K` | — | `60` | Constant K trong RRF (càng cao, càng ưu tiên rank cao) |
-| `DBSF_WINDOW` | — | `1000` | Window size cho DBSF |
-
-## 6. Qdrant
+## 5. Qdrant
 
 | Biến | Alias | Default | Mô tả |
 |---|---|---|---|
-| `QDRANT_URL` | — | `http://localhost` | URL Qdrant (⚠️ Không dùng `localhost` nếu cả 2 đều trong container) |
+| `QDRANT_URL` | — | `http://qdrant` | URL Qdrant (⚠️ Trong Docker container, `localhost` trỏ về chính container đó — dùng `http://qdrant` hoặc `http://host.docker.internal`) |
 | `QDRANT_PORT` | — | `6333` | REST API port |
 | `QDRANT_API_KEY` | `qdrant_cloud_api_key` | `(none)` | API key Qdrant Cloud |
-| `QDRANT_COLLECTION_NAME` | `QDRANT_COLLECTION`, `qdrant_collection` | `default` | Tên collection chính |
+| `QDRANT_COLLECTION_NAME` | `QDRANT_COLLECTION`, `qdrant_collection` | `default` | Tên collection dùng cho `/readyz` và default route |
 
-⚠️ **Important**: Khi API chạy Docker container, `localhost` trỏ về chính container đó.
-Nếu Qdrant chạy ở host → dùng `http://host.docker.internal`.
-Nếu Qdrant cùng Docker network → dùng service name (vd `http://qdrant`).
-Xem [DEPLOYMENT.md](DEPLOYMENT.md) để biết cách setup đúng.
+> **Collection do hệ thống ngoài dựng.** Repo này không có endpoint create
+> collection. Phải chắc chắn collection `QDRANT_COLLECTION_NAME` đã tồn tại
+> trên Qdrant trước khi `/readyz` trả về 200.
 
-## 7. DeepEval — NVIDIA NIM
+## 6. DeepEval — NVIDIA NIM (test only)
 
 | Biến | Default | Mô tả |
 |---|---|---|
@@ -74,9 +61,7 @@ Xem [DEPLOYMENT.md](DEPLOYMENT.md) để biết cách setup đúng.
 | `NVIDIA_EVAL_BASE_URL` | `https://integrate.api.nvidia.com/v1` | Endpoint NVIDIA NIM |
 | `NVIDIA_EVAL_RPS` | `30` | Giới hạn requests/sec cho rate limiter |
 
-Eval LLM dùng rate limit (`NVIDIA_EVAL_RPS`). Có thể bật/tắt qua `EVAL_RPM`, `EVAL_TPM`.
-
-## 8. DeepEval — Qwen (self-host)
+## 7. DeepEval — Qwen self-host (test only)
 
 | Biến | Default | Mô tả |
 |---|---|---|
@@ -85,57 +70,32 @@ Eval LLM dùng rate limit (`NVIDIA_EVAL_RPS`). Có thể bật/tắt qua `EVAL_R
 | `QWEN_EVAL_MODEL` | `qwen` | Tên model Qwen |
 | `QWEN_EVAL_THINKING` | `false` | Bật/tắt thinking mode của Qwen (extra_body) |
 
-Qwen không có rate limit (chạy local).
-
-## 9. Rate Limit (tổng quát — backup)
-
-| Biến | Default | Mô tả |
-|---|---|---|
-| `EVAL_RPM` | `13` | Giới hạn requests/minute cho Eval LLM |
-| `EVAL_TPM` | `40000` | Giới hạn tokens/minute |
-
-Hiện tại các rate limit này được dùng chủ yếu trong DeepEval suite.
-
-## 10. Migration
-
-| Biến | Default | Mô tả |
-|---|---|---|
-| `INPUT_DIR` | `../input` | Thư mục chứa Mongo dump JSON |
-| `MIGRATE_CHECKPOINT_FILE` | `./migration_checkpoint.jsonl` | File checkpoint resume migration |
-| `MIGRATE_MAX_DOCUMENTS` | không set | Giới hạn số document (ưu tiên thấp hơn CLI `--limit`) |
-| `MIGRATE_UPSERT_BATCH_SIZE` | `50` | Số record upsert 1 batch vào Qdrant |
-
-## 11. Chunking
-
-| Biến | Default | Mô tả |
-|---|---|---|
-| `CHUNK_SIZE` | `1500` | Kích thước chunk (ký tự) |
-| `CHUNK_OVERLAP` | `100` | Overlap giữa các chunk |
-| `MIN_CHUNK_TOKENS` | `100` | Gộp chunk nếu dưới ngưỡng token |
-| `CHUNK_CHECKPOINT_FILE` | `./chunk_checkpoint.jsonl` | File checkpoint resume chunking |
-| `ENABLE_LLM_ENRICH` | `false` | Bật enrich title/keywords bằng LLM (yêu cầu `LLM_BASE_URL` etc) |
-
-## 12. Frontend (optional)
-
-| Biến | Default | Mô tả |
-|---|---|---|
-| `BACKEND_HOST` | `localhost` | Host của backend API cho Streamlit |
-| `BACKEND_PORT` | `8001` | Port backend API |
-
-## 13. Backward Compatibility
+## 8. Backward Compatibility
 
 | Biến | Dùng trong | Mô tả |
 |---|---|---|
-| `COHERE_API_KEY` | reranker (cohere provider) | Cohere Rerank API key |
-| `OPENAI_API_KEY` | graph cũ / deep eval | Giữ để test backward-compat |
+| `COHERE_API_KEY` | (legacy) | Giữ nhưng không dùng ở v7 (reranker cohere đã bỏ) |
+| `OPENAI_API_KEY` | (legacy) | Giữ nhưng không dùng ở v7 runtime |
 
-## 14. Model Config Reference
+## 9. Tổng hợp default `RERANK_PROVIDER` theo use case
 
-Nếu cần swap model embedding/reranker, liệt kê các model được test ổn định:
+| Use case | `RERANK_PROVIDER` | Trade-off |
+|---|---|---|
+| Smoke test nhanh, không cần precision cao | `none` | Passthrough, không load reranker model -> tiết kiệm ~2.2GB RAM |
+| Production cần score chính xác | `bge` | Load BGE-reranker-v2-m3, tăng precision nhưng tốn RAM + ~100ms/request |
+
+## 10. Migration / Chunking (LOẠI BỎ ở v7)
+
+Các biến `INPUT_DIR`, `MIGRATE_*`, `CHUNK_*`, `ENABLE_LLM_ENRICH`, `LLM_*`,
+`BACKEND_HOST`, `BACKEND_PORT`, `EVAL_RPM`, `EVAL_TPM`, `REC` đã bị loại bỏ
+trong `template.env`. Migration scripts và ingestion logic thuộc về repo hệ
+thống ngoài quản lý Qdrant.
+
+## 11. Model Config Reference
 
 | Model | HuggingFace ID | Loại | dim |
 |---|---|---|---|
-| BGE-m3 | `BAAI/bge-m3` | Dense+Sparse | 1024 |
+| BGE-m3 | `BAAI/bge-m3` | Dense + Sparse | 1024 |
 | BGE-reranker-v2-m3 | `BAAI/bge-reranker-v2-m3` | Reranker | — |
-| Qwen 2.5 (16B) | local serve | Eval LLM | — |
-| Llama 3.3 70B | NVIDIA NIM | Eval LLM | — |
+| Qwen 2.5 (16B) | local serve | Eval LLM (test only) | — |
+| Llama 3.3 70B | NVIDIA NIM | Eval LLM (test only) | — |

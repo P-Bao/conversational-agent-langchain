@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from loguru import logger
 
-from agent.routes import rag, search
+from agent.routes import health, rag, search
 from agent.utils.config import Config
 
 load_dotenv(override=True)
@@ -51,6 +51,7 @@ logger.info("Loading REST API Finished.")
 
 app.include_router(router=rag.router, prefix="/rag")
 app.include_router(router=search.router, prefix="/semantic")
+app.include_router(router=health.router, tags=["health"])
 
 
 @app.get(path="/", tags=["root"])

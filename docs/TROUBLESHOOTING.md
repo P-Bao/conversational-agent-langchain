@@ -1,31 +1,35 @@
-# Xử Lý Lỗi Thường Gặp — Troubleshooting Guide
+# Xử Lý Lỗi Thường Gặp — Troubleshooting Guide (v7.0.0)
 
 ## 1. API không start được (CrashLoopBackOff)
 
 ### Lỗi: `Connection refused [Errno 111]` với Qdrant
 
-**Nguyên nhân**: API container không kết nối được Qdrant.
+**Nguyên nhân**: API không kết nối được Qdrant.
 
-**Checklist**:
+> **Khác v6**: ở v7, API không crash khi Qdrant down (chỉ `/readyz` trả 503).
+> Nếu thấy crash thật sự, nguyên nhân nằm ở chỗ khác — kiểm tra `docker logs`
+> kỹ hơn.
 
-```powershell
+**Checklist:**
+
+```bash
 # 1. Qdrant có chạy không?
-docker ps | findstr qdrant
+docker ps | grep qdrant
 
 # 2. Network test_network có tồn tại không?
-docker network ls | findstr test_network
+docker network ls | grep test_network
 
 # 3. Cả 2 container có cùng network không?
 docker network inspect test_network | grep -E "qdrant|conversational"
 
 # 4. Env QDRANT_URL trong container đúng không?
-docker exec conversational-rag-api python -c "import os; [print(f'{k}={v}') for k,v in os.environ.items() if 'QDRANT' in k]"
+docker exec conversational-rag-api bash -c 'env | grep QDRANT'
 
 # 5. Test kết nối từ container đến Qdrant
-docker exec conversational-rag-api python -c "import urllib.request; print(urllib.request.urlopen('http://qdrant:6333/').read()[:100])"
+docker exec conversational-rag-api curl http://qdrant:6333/
 ```
 
-**Fix**:
+**Fix:**
 
 | Scenario | Fix |
 |---|---|
@@ -37,7 +41,21 @@ docker exec conversational-rag-api python -c "import urllib.request; print(urlli
 ### Lỗi: `Failed to obtain server version` (Qdrant client warning)
 
 Warning, không fatal. Qdrant client không check được version compatibility. Set
-`check_compatibility=False` trong code hoặc ignore.
+`check_compatibility=False` hoặc ignore.
+
+### Lỗi: `/readyz` trả về 503
+
+Xem nguyên nhân cụ thể ở `reason`:
+
+```bash
+curl -i http://localhost:8001/readyz
+```
+
+| `reason` | Nguyên nhân | Fix |
+|---|---|---|
+| `collection_missing` | Collection `QDRANT_COLLECTION_NAME` chưa tồn tại trên Qdrant | Chạy ingestion (repo ngoài) hoặc tạo collection thủ công qua Qdrant Dashboard |
+| `qdrant_unreachable` | Qdrant down hoặc `QDRANT_URL` sai | Verify Qdrant running + URL correct |
+| `qdrant_error` | Qdrant trả non-2xx (auth, network policy, ...) | Check Qdrant logs, `QDRANT_API_KEY` nếu dùng cloud |
 
 ### Lỗi: `API key is used with an insecure connection`
 
@@ -49,12 +67,11 @@ Warning, không fatal. Gọi API Qdrant không có SSL. Dùng HTTP cho local dev
 
 **Nguyên nhân**: Không truy cập được HuggingFace Hub (network restriction / proxy).
 
-**Fix**:
+**Fix:**
 
-```powershell
+```bash
 # Dùng mirror cho China / nội bộ
-$env:HF_ENDPOINT = "https://hf-mirror.com"
-docker compose up --build -d
+HF_ENDPOINT=https://hf-mirror.com docker compose up --build -d
 
 # Hoặc download model trước, mount thủ công
 uv run huggingface-cli download BAAI/bge-m3
@@ -75,116 +92,101 @@ volumes:
 
 ### Lỗi: Model load rất chậm (phút)
 
-Lần đầu load model (2.2GB mỗi model) từ HuggingFace → phụ thuộc bandwidth.
+Lần đầu load model (2.2GB) từ HuggingFace → phụ thuộc bandwidth.
 Các lần sau dùng cache volume `bge_hf_cache`. Nếu vẫn chậm → kiểm tra tốc độ mạng.
 
-## 3. Migration
+> Ở v7 mặc định `RERANK_PROVIDER=none` → **chỉ load embedding** (1 model).
+> Nếu set `RERANK_PROVIDER=bge` còn phải load thêm reranker (~200MB thời gian).
 
-### Lỗi: `FileNotFoundError: input/`
-
-**Nguyên nhân**: Thư mục input (Mongo dump) không đúng.
-
-**Fix**: Kiểm tra `INPUT_DIR` trong `.env` (default `../input`). Tạo dir:
-
-```powershell
-New-Item -ItemType Directory -Path ../input -Force
-# Đặt file dump JSON vào ../input/
-```
-
-### Lỗi: Migration rất chậm / tiến độ 0
-
-Chạy local embedding CPU-bound. Với dataset lớn (>10k docs) có thể mất hàng giờ.
-
-```powershell
-# Test với limit trước
-uv run python -m agent.scripts.migrate_dump_to_qdrant --limit 10
-
-# Full migration
-uv run python -m agent.scripts.migrate_dump_to_qdrant
-
-# Resume nếu bị gián đoạn (chạy lại, tự skip đã upsert)
-```
-
-### Lỗi: `Conflict` / `Already exists` (Qdrant upsert)
-
-Checkpoint tự skip, nhưng nếu muốn force re-upsert toàn bộ:
-
-```powershell
-Remove-Item migration_checkpoint.jsonl
-uv run python -m agent.scripts.migrate_dump_to_qdrant --recreate
-```
-
-## 4. Embedding / Upload
-
-### Lỗi: `No files were uploaded`
-
-**Nguyên nhân**: Body multipart không đúng format.
-
-**Fix**: Dùng đúng key `files` trong form-data:
-
-```powershell
-curl -X POST "http://localhost:8001/embeddings/documents?collection_name=default&file_ending=.pdf" -F "files=@test.pdf"
-```
-
-### Lỗi: Upload file rất chậm
-
-Embedding CPU-bound. File lớn (100+ trang PDF) có thể mất 1-2 phút. Thiết kế là synchronous
-(in thread pool) — một request chiếm toàn bộ CPU cho embedding.
-
-## 5. Search / Retrieval
+## 3. Search / Retrieval
 
 ### Lỗi: Search trả về empty documents
 
-```powershell
-# 1. Qdrant có data không?
+```bash
+# 1. Collection có data không?
 curl http://localhost:6333/collections/documents/points/count
 
 # 2. Collection name đúng không?
 curl http://localhost:6333/collections
 
 # 3. Test search trực tiếp Qdrant
-curl -X POST http://localhost:6333/collections/documents/points/search -H "Content-Type: application/json" -d '{"vector": [0]*1024, "limit": 1}'
+curl -X POST http://localhost:6333/collections/documents/points/search \
+  -H "Content-Type: application/json" \
+  -d '{"vector": [0]*1024, "limit": 1}'
 ```
 
 ### Lỗi: `Unknown fusion_algorithm: '...'`
 
 **Nguyên nhân**: `FUSION_ALGORITHM` trong `.env` không hợp lệ.
 
-**Fix**: Chỉ chấp nhận `rrf` hoặc `dbsf`. Xem [CONFIGURATION.md](CONFIGURATION.md).
+**Fix**: Chỉ chấp nhận `rrf` hoặc `dbsf`. Xem [CONFIGURATION.md](CONFIGURATION.md) §3.
 
-## 6. Kết nối mạng giữa các container
+### Lỗi: 422 Validation Error ở `/rag/` hoặc `/semantic/search`
+
+Thường do thiếu field `messages` / `query` / `collection_name`. Kiểm tra request
+body khớp schema trong [API_REFERENCE.md](API_REFERENCE.md).
+
+## 4. Migration / Ingestion (LOẠI BỎ ở v7)
+
+> Repo này **không còn** script migration hay endpoint ingestion. Nếu bạn
+> thấy reference tới `python -m agent.scripts.migrate_dump_to_qdrant` —
+> script đã xoá. Liên hệ team ingestion để biết repo của họ.
+
+## 5. Kết nối mạng giữa các container
 
 ### Diagnostic Script (chạy từ host):
 
-```powershell
-Write-Host "=== Network Check ===" -ForegroundColor Cyan
-docker network inspect test_network | python -c "import sys,json; d=json.load(sys.stdin); [print(f'  {c}: {v["Name"]}') for c,v in d[0]['Containers'].items()]"
+```bash
+echo "=== Network Check ==="
+docker network inspect test_network | python3 -c \
+  "import sys,json; d=json.load(sys.stdin); print([c['Name'] for c in d[0]['Containers'].values()])"
 
-Write-Host "`n=== Qdrant Direct ===" -ForegroundColor Cyan
-docker exec conversational-rag-api python -c "import urllib.request; print(urllib.request.urlopen('http://qdrant:6333/').read()[:200].decode())" -ErrorAction SilentlyContinue
+echo "=== Qdrant Direct ==="
+docker exec conversational-rag-api curl -s http://qdrant:6333/ | head -c 200
+echo
 
-Write-Host "`n=== Env Check ===" -ForegroundColor Cyan
-docker exec conversational-rag-api python -c "import os; print('QDRANT_URL:', os.environ.get('QDRANT_URL','MISSING'))"
+echo "=== Env Check ==="
+docker exec conversational-rag-api bash -c 'echo QDRANT_URL=${QDRANT_URL:-MISSING}'
 ```
 
-## 7. Out of Memory / Performance
+## 6. Out of Memory / Performance
 
 **Symptom**: API chậm dần theo thời gian, hoặc crash khi có nhiều request.
 
-**Check**:
+**Check:**
 
-```powershell
+```bash
 docker stats conversational-rag-api --no-stream
 ```
 
 **Fix**:
 - Giới hạn memory container: `deploy.resources.limits.memory: 12G`
+- Tắt reranker: `RERANK_PROVIDER=none` → giảm ~2GB RAM + ~100ms/request
 - Load test trước khi deploy production
 - Cache warm: request 1 query ngẫu nhiên sau deploy
 
-## 8. Common Known Bugs (v6.0.0)
+## 7. Endpoints Đã Bỏ (404)
 
-| Bug | Workaround | Fixed in |
+Nếu client cũ gọi các endpoint ở v6, sẽ nhận 404:
+
+```bash
+curl -i -X POST http://localhost:8001/collection/create/x?embeddings_size=1024
+# HTTP/1.1 404 Not Found
+
+curl -i -X POST http://localhost:8001/embeddings/documents?collection_name=x
+# HTTP/1.1 404 Not Found
+
+curl -i -X DELETE http://localhost:8001/embeddings/delete/x?collection_name=x
+# HTTP/1.1 404 Not Found
+```
+
+> **Cập nhật client** để chỉ gọi `/rag/`, `/rag/stream`, `/semantic/search`,
+> `/healthz`, `/readyz`. Ingestion chuyển sang repo ngoài.
+
+## 8. Common Known Bugs (v7.0.0)
+
+| Bug | Workaround | Status |
 |---|---|---|
-| `QDRANT_URL==http://qdrant` double `=` typo trong `.env` | Sửa thành `QDRANT_URL=http://qdrant` | v6.0.1 |
-| Frontend stream không show content (vì API chỉ trả documents) | Frontend cần update parse `type=documents` | v6.1.0 |
+| `get_reranker(provider="cohere")` raise `ValueError` | Cohere/FlashRank đã bỏ ở v7 — chuyển sang `provider="none"` hoặc `"bge"` | By design |
+| Frontend cũ (v6) gọi `/embeddings/documents` → 404 | Frontend phải làm việc với API v7 (chỉ retrieval); ingestion tách riêng | Migrate frontend |
+| Conftest cũ dùng env var cũ (`AU_EMBED_MODEL_NAME`) | Conftest v7 chỉ set các env mới (`EMBEDDING_MODEL`, v.v.). Code Config có alias backward-compat | Backward-compat |
