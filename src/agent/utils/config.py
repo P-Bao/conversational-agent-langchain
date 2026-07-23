@@ -7,8 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Config(BaseSettings):
     """Loading the settings with pydantic.
 
-    Retrieval-only configuration: BGE-m3 cho dense + sparse (env tách), BGE reranker v2-m3,
-    không còn LLM generation. Eval LLM (DeepEval) tách config riêng trong test scope.
+    Retrieval-only configuration: BGE-m3 cho dense + sparse (env tách), BGE reranker v2-m3
+    (optional). Eval LLM (DeepEval) tách config riêng trong test scope.
     """
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -23,8 +23,6 @@ class Config(BaseSettings):
         default=1024,
         validation_alias=AliasChoices("embedding_size", "EMBEDDING_SIZE", "AU_EMBED_DIMENSION"),
     )
-    embedding_base_url: str = ""
-    embedding_api_key: str = ""
 
     # === Sparse embedding (BGE-m3 — cùng model nhưng env tách để swap linh hoạt) ===
     sparse_model: str = Field(
@@ -37,10 +35,6 @@ class Config(BaseSettings):
         default="default",
         validation_alias=AliasChoices("qdrant_collection", "QDRANT_COLLECTION", "qdrant_collection_name"),
     )
-
-    # === Backward-compat (giữ cho script migration + test cũ) ===
-    openai_api_key: str = ""
-    cohere_api_key: str = ""
 
     # === Reranker (BGE-reranker v2-m3, optional — default 'none' = passthrough) ===
     rerank_provider: str = "none"
@@ -59,8 +53,6 @@ class Config(BaseSettings):
         default="rrf",
         validation_alias=AliasChoices("fusion_algorithm", "FUSION_ALGORITHM", "hybrid_fusion"),
     )
-    rrf_k: int = Field(default=60, validation_alias=AliasChoices("rrf_k", "RRF_K"))
-    dbsf_window: int = Field(default=1000, validation_alias=AliasChoices("dbsf_window", "DBSF_WINDOW"))
 
     # === QDRANT ===
     qdrant_url: str = "http://localhost"

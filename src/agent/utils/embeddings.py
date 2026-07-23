@@ -1,18 +1,20 @@
 """Embedding model utilities for BGE-m3 (dense + sparse from same model).
 
 Sử dụng FlagEmbedding.BGEM3FlagModel — hỗ trợ native dense+sparse+colbert trong 1 forward pass.
-Mặc định dense và sparse dùng cùng model `BAAI/bge-m3`, nhưng env tách (`AU_EMBED_MODEL_NAME`
-cho dense, `AU_SPARSE_MODEL_NAME` cho sparse) để swap linh hoạt. Vì cùng model, một instance
+Mặc định dense và sparse dùng cùng model `BAAI/bge-m3`, nhưng env tách (`EMBEDDING_MODEL`
+cho dense, `SPARSE_MODEL` cho sparse) để swap linh hoạt. Vì cùng model, một instance
 BGEM3FlagModel chia sẻ cho cả 2 wrapper (tránh load model 2 lần tốn RAM/GPU).
+
+Chỉ hỗ trợ provider ``bge`` ở v7 — OpenAI-compatible provider đã được chuyển
+sang hệ thống ngoài (ingestion repo).
 """
 
 from __future__ import annotations
 
-from langchain_core.embeddings import Embeddings
-from loguru import logger
-
 import torch
+from langchain_core.embeddings import Embeddings
 from langchain_qdrant import SparseEmbeddings, SparseVector
+from loguru import logger
 
 from agent.utils.config import Config
 
@@ -94,34 +96,18 @@ def _get_bge3_sparse_model(cfg: Config):
 
 
 def get_embedding_model(cfg: Config) -> Embeddings:
-    """Return dense embeddings client theo cấu hình provider."""
+    """Return dense embeddings client (chỉ hỗ trợ provider BGE ở v7)."""
     provider = cfg.embedding_provider
-    model_name = cfg.embedding_model
-
-    match provider:
-        case "bge" | "flagembedding":
-            return BGE3Embeddings(_get_bge3_model(cfg))
-
-        case "openai" | "openai-compatible" | "custom":
-            from langchain_openai import OpenAIEmbeddings  # noqa: PLC0415
-
-            if not cfg.embedding_base_url:
-                msg = "embedding_base_url is required for 'openai-compatible' provider."
-                raise ValueError(msg)
-            return OpenAIEmbeddings(
-                model=model_name,
-                api_key=cfg.embedding_api_key or None,
-                base_url=cfg.embedding_base_url,
-            )
-
-        case _:
-            msg = f"No suitable embedding Model configured for provider: {provider!r}"
-            raise KeyError(msg)
+    if provider != "bge":
+        msg = f"No suitable embedding Model configured for provider: {provider!r}. Only 'bge' supported in v7."
+        raise KeyError(msg)
+    return BGE3Embeddings(_get_bge3_model(cfg))
 
 
 def get_sparse_embedding(cfg: Config) -> BGE3SparseEmbeddings:
     """Return sparse embeddings client (BGE-m3 lexical weights).
 
-   _sparse_vector_name` trong Config (`bge-m3-sparse`) dùng làm named vector trong Qdrant.
+    Named vector `sparse_vector_name` trong Config (`bge-m3-sparse`) dùng làm
+    named vector trong Qdrant.
     """
     return BGE3SparseEmbeddings(_get_bge3_sparse_model(cfg))

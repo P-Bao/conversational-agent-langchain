@@ -28,6 +28,9 @@
 | `RETRIEVAL_K_RETRY` | `100` | Số document lấy khi `retry_count > 0` (retry logic trong graph) |
 | `FUSION_ALGORITHM` (alias `hybrid_fusion`) | `rrf` | Thuật toán fusion: `rrf` (Reciprocal Rank Fusion) hoặc `dbsf` (Distribution-Based Score Fusion) |
 
+> Thuật toán fusion do Qdrant xử lý server-side. Để tinh chỉnh `rrf_k` /
+> `dbsf_window`, dùng Qdrant REST API trực tiếp — repo này không expose env riêng.
+
 ## 4. Reranker
 
 | Biến | Alias | Default | Mô tả |
@@ -68,28 +71,47 @@
 | `QWEN_EVAL_BASE_URL` | `http://localhost:8000/v1` | Endpoint OpenAI-compatible của Qwen |
 | `QWEN_EVAL_API_KEY` | `""` | API key (nếu cần) |
 | `QWEN_EVAL_MODEL` | `qwen` | Tên model Qwen |
-| `QWEN_EVAL_THINKING` | `false` | Bật/tắt thinking mode của Qwen (extra_body) |
 
-## 8. Backward Compatibility
+> `QWEN_EVAL_THINKING` đã bỏ ở v7 — `QwenEvalLLM` hardcode `thinking=False`
+> trong request body. Nếu cần bật/tắt runtime, sửa trực tiếp
+> `tests/test_rag_deepeval_qwen.py::QwenEvalLLM.generate`.
 
-| Biến | Dùng trong | Mô tả |
-|---|---|---|
-| `COHERE_API_KEY` | (legacy) | Giữ nhưng không dùng ở v7 (reranker cohere đã bỏ) |
-| `OPENAI_API_KEY` | (legacy) | Giữ nhưng không dùng ở v7 runtime |
-
-## 9. Tổng hợp default `RERANK_PROVIDER` theo use case
+## 8. Tổng hợp default `RERANK_PROVIDER` theo use case
 
 | Use case | `RERANK_PROVIDER` | Trade-off |
 |---|---|---|
 | Smoke test nhanh, không cần precision cao | `none` | Passthrough, không load reranker model -> tiết kiệm ~2.2GB RAM |
 | Production cần score chính xác | `bge` | Load BGE-reranker-v2-m3, tăng precision nhưng tốn RAM + ~100ms/request |
 
-## 10. Migration / Chunking (LOẠI BỎ ở v7)
+## 9. Migration / Chunking (LOẠI BỎ ở v7)
 
 Các biến `INPUT_DIR`, `MIGRATE_*`, `CHUNK_*`, `ENABLE_LLM_ENRICH`, `LLM_*`,
 `BACKEND_HOST`, `BACKEND_PORT`, `EVAL_RPM`, `EVAL_TPM`, `REC` đã bị loại bỏ
 trong `template.env`. Migration scripts và ingestion logic thuộc về repo hệ
 thống ngoài quản lý Qdrant.
+
+## 10. Backward-compat Aliases (giữ backward-compat cho `.env` cũ)
+
+`Config` vẫn nhận các alias cũ để tránh break `.env` legacy trong qúa trình
+upgrade:
+
+| Alias mới | Alias cũ (backward-compat) |
+|---|---|
+| `EMBEDDING_MODEL` | `AU_EMBED_MODEL_NAME`, `AU_EMBED_MODEL` |
+| `EMBEDDING_SIZE` | `AU_EMBED_DIMENSION` |
+| `SPARSE_MODEL` | `AU_SPARSE_MODEL_NAME`, `AU_SPARSE_MODEL` |
+| `RERANK_MODEL` | `AU_RERANK_MODEL_NAME`, `AU_RERANK_MODEL` |
+| `QDRANT_COLLECTION_NAME` | `QDRANT_COLLECTION`, `qdrant_collection` |
+| `FUSION_ALGORITHM` | `hybrid_fusion` |
+| `QDRANT_API_KEY` | `qdrant_cloud_api_key` |
+
+> Nếu `.env` của bạn còn chứa `AU_EMBED_*`, `AU_SPARSE_*`, `AU_RERANK_*` → vẫn chạy OK ở
+> v7. Nhưng khuyến nghị trim về tên mới để đồng bộ với `template.env`.
+
+Các biến đã bị **xoá hoàn toàn** (không còn backward-compat): `COHERE_API_KEY`,
+`OPENAI_API_KEY`, `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`, `RERANK_*` ngoài
+`RERANK_MODEL/TOP_K`, `RRF_K`, `DBSF_WINDOW`, `QWEN_EVAL_THINKING`, `EVAL_RPM`,
+`EVAL_TPM`, `BACKEND_*`, `RECREATE_COLLECTION`.
 
 ## 11. Model Config Reference
 

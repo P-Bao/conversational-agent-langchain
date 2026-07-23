@@ -104,7 +104,6 @@ NVIDIA_EVAL_RPS=30
 QWEN_EVAL_BASE_URL=http://localhost:8000/v1
 QWEN_EVAL_API_KEY=
 QWEN_EVAL_MODEL=qwen
-QWEN_EVAL_THINKING=false
 ```
 
 ## 5. Interpret Results
