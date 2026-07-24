@@ -8,7 +8,7 @@ from loguru import logger
 from agent.routes import health, rag, search
 from agent.utils.config import Config
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 config = Config()
 logger.info("Startup: Retrieval & Search API v7.0.0")
 
@@ -16,7 +16,7 @@ logger.info("Startup: Retrieval & Search API v7.0.0")
 app = FastAPI(
     title="Retrieval & Search API",
     version="7.0.0",
-    description="Retrieval-only API: returns relevant document context from external Qdrant using BGE-m3 (dense+sparse) and optional BGE reranker.",
+    description="Retrieval-only API: returns relevant document context from external Qdrant using remote BGE-m3 dense embeddings and optional BGE reranker.",
 )
 
 

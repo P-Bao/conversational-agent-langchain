@@ -8,11 +8,6 @@ class SearchParams(BaseModel):
 
     query: str = Field(..., title="Query", description="The search query.")
     k: int = Field(3, title="Amount", description="The number of search results to return.")
-    collection_name: str = Field(
-        default="default",
-        title="Collection Name",
-        description="The name of the collection to search in.",
-    )
 
 
 class ChatMessages(BaseModel):
@@ -27,7 +22,11 @@ class ChatMessages(BaseModel):
 
 
 class RAGRequest(BaseModel):
-    """Request for the QA endpoint."""
+    """Request for the QA endpoint.
+
+    Collection name is read from the app config (``QDRANT_COLLECTION_NAME``)
+    and is no longer provided per-request.
+    """
 
     messages: list[ChatMessages] | None = Field(
         default=[
@@ -38,11 +37,6 @@ class RAGRequest(BaseModel):
         ],
         title="History",
         description="A list of previous questions and answers to include in the context.",
-    )
-    collection_name: str = Field(
-        default="default",
-        title="Collection Name",
-        description="The name of the collection to search in.",
     )
 
 

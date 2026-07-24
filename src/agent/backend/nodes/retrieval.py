@@ -15,8 +15,7 @@ def retrieve_documents(state: AgentState, config: RunnableConfig, *, cfg: Config
     retry_count = state.get("retry_count", 0)
     k = cfg.retrieval_k if retry_count == 0 else cfg.retrieval_k_retry
 
-    collection_name = config.get("metadata", {}).get("collection_name") or cfg.qdrant_collection_name
-    retriever = get_retriever(k=k, collection_name=collection_name, cfg=cfg)
+    retriever = get_retriever(k=k, cfg=cfg)
 
     messages = convert_to_messages(messages=state["messages"])
     query = state.get("query") or messages[-1].content
@@ -26,11 +25,7 @@ def retrieve_documents(state: AgentState, config: RunnableConfig, *, cfg: Config
         logger.info(f"No relevant documents found for the query: {query}")
 
     if relevant_documents and cfg.rerank_provider != "none":
-        reranker_fn = get_reranker(
-            provider=cfg.rerank_provider,
-            top_k=cfg.rerank_top_k,
-            model_name=cfg.rerank_model,
-        )
+        reranker_fn = get_reranker(cfg, top_k=cfg.rerank_top_k)
         relevant_documents = reranker_fn(relevant_documents, query)
 
     return {"query": query, "documents": relevant_documents, "retry_count": retry_count}

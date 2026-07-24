@@ -16,7 +16,6 @@ async def search(search: SearchParams) -> list[SearchResponse] | JSONResponse:
     """Search for documents."""
     logger.info("Searching for Documents")
     retriever = get_retriever(
-        collection_name=search.collection_name,
         k=search.k,
     )
     docs = await retriever.ainvoke(search.query)

@@ -20,7 +20,7 @@ router = APIRouter()
 async def question_answer(rag: RAGRequest) -> RetrievalResponse:
     """Retrieving relevant documents for the query."""
     messages = [dict(m) for m in rag.messages]
-    chain_result = await graph.with_config({"metadata": {"collection_name": rag.collection_name}}).ainvoke({"messages": messages})
+    chain_result = await graph.ainvoke({"messages": messages})
 
     docs = chain_result.get("documents", [])
     retrieved_docs = [
@@ -45,7 +45,7 @@ async def question_answer_stream(rag: RAGRequest) -> StreamingResponse:
     async def stream() -> AsyncGenerator[str, None]:
         yield json.dumps({"type": "status", "data": "Starting request..."}) + "\n"
 
-        async for chunk in graph.with_config({"metadata": {"collection_name": rag.collection_name}}).astream_events({"messages": messages}, version="v2"):
+        async for chunk in graph.astream_events({"messages": messages}, version="v2"):
             if chunk["event"] == "on_chain_start" and chunk["name"] == "retriever":
                 yield json.dumps({"type": "status", "data": "Searching documents..."}) + "\n"
 
