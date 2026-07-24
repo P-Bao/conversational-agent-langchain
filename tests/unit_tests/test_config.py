@@ -9,9 +9,8 @@ def _defaults(cls: type[Config]) -> dict[str, object]:
 
 def test_field_defaults_embedding() -> None:
     d = _defaults(Config)
-    assert d["embedding_provider"] == "bge"
-    assert d["embedding_model"] == "BAAI/bge-m3"
-    assert d["embedding_size"] == 1024
+    assert d["embedding_provider"] == "remote"
+    assert d["embedding_base_url"] == ""
 
 
 def test_field_defaults_rerank_provider_is_none() -> None:
@@ -21,7 +20,7 @@ def test_field_defaults_rerank_provider_is_none() -> None:
 
 def test_field_defaults_qdrant() -> None:
     d = _defaults(Config)
-    assert d["qdrant_collection_name"] == "default"
+    assert d["qdrant_collection_name"] == "documents"
     assert d["qdrant_url"] == "http://localhost"
     assert d["qdrant_port"] == 6333
     assert d["qdrant_prefer_grpc"] is False
@@ -33,17 +32,14 @@ def test_field_defaults_retrieval_k() -> None:
     assert d["retrieval_k_retry"] == 100
 
 
-def test_field_defaults_fusion_algorithm() -> None:
-    d = _defaults(Config)
-    assert d["fusion_algorithm"] == "rrf"
-
-
 def test_overrides() -> None:
     cfg = Config(
-        rerank_provider="bge",
-        rerank_model="BAAI/bge-reranker-v2-m3",
+        rerank_provider="remote",
+        rerank_base_url="https://example.ngrok-free.app",
         rerank_top_k=7,
+        embedding_base_url="https://embed.ngrok-free.app",
     )
     assert cfg.rerank_top_k == 7
-    assert cfg.rerank_provider == "bge"
-    assert cfg.rerank_model == "BAAI/bge-reranker-v2-m3"
+    assert cfg.rerank_provider == "remote"
+    assert cfg.rerank_base_url == "https://example.ngrok-free.app"
+    assert cfg.embedding_base_url == "https://embed.ngrok-free.app"

@@ -44,14 +44,25 @@ def anyio_backend() -> Literal["asyncio"]:
 
 @pytest.fixture(autouse=True, scope="session")
 def test_env_defaults() -> None:
-    os.environ.setdefault("EMBEDDING_PROVIDER", "bge")
-    os.environ.setdefault("EMBEDDING_MODEL", "BAAI/bge-m3")
-    os.environ.setdefault("EMBEDDING_SIZE", "1024")
-    os.environ.setdefault("SPARSE_MODEL", "BAAI/bge-m3")
-    os.environ.setdefault("RERANK_PROVIDER", "none")
-    os.environ.setdefault("RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
-    os.environ.setdefault("QDRANT_URL", "http://localhost")
-    os.environ.setdefault("QDRANT_PORT", "6333")
+    # Load .env trước (cho eval/Qwen test cần giá trị thật). Unit test vẫn patch
+    # everything nên không bị ảnh hưởng. Nếu .env thiếu thì giữ default rỗng —
+    # test DeepEval sẽ fail-fast thay vì dùng endpoint rởm.
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(override=False)
+    except ImportError:
+        pass
+
+    os.environ["EMBEDDING_PROVIDER"] = "remote"
+    # Base URL embedding/reranker lấy từ .env (Colab ngrok / server Docker thật).
+    # Override qua shell env nếu cần (CI). Không hardcode default.
+    os.environ.setdefault("EMBEDDING_BASE_URL", "")
+    os.environ["RERANK_PROVIDER"] = "none"
+    os.environ.setdefault("RERANK_BASE_URL", "")
+    os.environ["QDRANT_URL"] = os.environ.get("TEST_QDRANT_URL") or "http://localhost"
+    os.environ["QDRANT_PORT"] = os.environ.get("TEST_QDRANT_PORT") or "6333"
+    os.environ["QDRANT_COLLECTION_NAME"] = os.environ.get("TEST_QDRANT_COLLECTION_NAME") or "documents"
     os.environ.setdefault("QDRANT_API_KEY", "test_api_key")
 
 

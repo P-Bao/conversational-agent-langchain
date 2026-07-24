@@ -14,7 +14,7 @@ pytestmark = [pytest.mark.contract, pytest.mark.integration]
 def test_search_contract(client) -> None:
     retriever = FakeAsyncRetriever([FakeDoc(page_content="hello", metadata={"page": 1, "source": "doc.txt"})])
     with patch("agent.routes.search.get_retriever", return_value=retriever):
-        response = client.post("/semantic/search", json={"query": "hello", "collection_name": "default", "k": 2})
+        response = client.post("/semantic/search", json={"query": "hello", "k": 2})
 
     assert response.status_code == 200
     assert response.json() == snapshot([{"text": "hello", "page": 1, "source": "doc.txt"}])

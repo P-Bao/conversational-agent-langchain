@@ -14,7 +14,7 @@ pytestmark = pytest.mark.e2e
 def test_stream_live_backend() -> None:
     response = requests.post(
         "http://localhost:8001/rag/stream",
-        json={"messages": [{"role": "user", "content": "Hello, how are you?"}], "collection_name": "default"},
+        json={"messages": [{"role": "user", "content": "Hello, how are you?"}]},
         headers={"Content-Type": "application/json"},
         stream=True,
         timeout=30,

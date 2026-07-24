@@ -46,7 +46,7 @@ def test_search_endpoint_execution(mock_get_retriever, client) -> None:
 
     response = client.post(
         "/semantic/search",
-        json={"query": "test", "collection_name": "default", "k": 4},
+        json={"query": "test", "k": 4},
     )
     assert response.status_code == 200
     assert response.json() == snapshot(

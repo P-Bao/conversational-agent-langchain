@@ -13,7 +13,7 @@ pytestmark = pytest.mark.anyio
 
 @patch("agent.routes.rag.graph")
 def test_rag_question_answer_returns_retrieval_response(mock_graph, client) -> None:
-    mock_graph.with_config.return_value.ainvoke = AsyncMock(
+    mock_graph.ainvoke = AsyncMock(
         return_value={
             "query": "question",
             "documents": [
@@ -25,7 +25,7 @@ def test_rag_question_answer_returns_retrieval_response(mock_graph, client) -> N
 
     response = client.post(
         "/rag/",
-        json={"messages": [{"role": "user", "content": "question"}], "collection_name": "test"},
+        json={"messages": [{"role": "user", "content": "question"}]},
     )
 
     assert response.status_code == 200
@@ -39,13 +39,13 @@ def test_rag_question_answer_returns_retrieval_response(mock_graph, client) -> N
 
 @patch("agent.routes.rag.graph")
 def test_rag_question_answer_empty_documents(mock_graph, client) -> None:
-    mock_graph.with_config.return_value.ainvoke = AsyncMock(
+    mock_graph.ainvoke = AsyncMock(
         return_value={"query": "question", "documents": []}
     )
 
     response = client.post(
         "/rag/",
-        json={"messages": [{"role": "user", "content": "question"}], "collection_name": "test"},
+        json={"messages": [{"role": "user", "content": "question"}]},
     )
 
     assert response.status_code == 200
@@ -53,17 +53,18 @@ def test_rag_question_answer_empty_documents(mock_graph, client) -> None:
 
 
 @patch("agent.routes.rag.graph")
-def test_rag_question_answer_passes_collection_name_in_metadata(mock_graph, client) -> None:
-    mock_graph.with_config.return_value.ainvoke = AsyncMock(
+def test_rag_question_answer_invokes_graph_without_per_request_collection(mock_graph, client) -> None:
+    """Collection is no longer per-request; verify graph.ainvoke is called directly."""
+    mock_graph.ainvoke = AsyncMock(
         return_value={"query": "q", "documents": []}
     )
 
     client.post(
         "/rag/",
-        json={"messages": [{"role": "user", "content": "q"}], "collection_name": "my_coll"},
+        json={"messages": [{"role": "user", "content": "q"}]},
     )
 
-    mock_graph.with_config.assert_called_once_with({"metadata": {"collection_name": "my_coll"}})
+    mock_graph.ainvoke.assert_awaited_once_with({"messages": [{"role": "user", "content": "q"}]})
 
 
 @patch("agent.routes.rag.graph")
@@ -89,11 +90,10 @@ def test_rag_stream_emits_ndjson_events(mock_graph, client) -> None:
             },
         }
 
-    mock_graph.with_config.return_value.astream_events = mock_stream
+    mock_graph.astream_events = mock_stream
 
     payload = {
         "messages": [{"role": "user", "content": "question"}],
-        "collection_name": "test",
     }
 
     with client.stream("POST", "/rag/stream", json=payload) as response:
