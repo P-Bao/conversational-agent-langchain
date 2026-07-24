@@ -1,3 +1,21 @@
+## 7.1.0 (2026-07-24)
+
+### Breaking Changes
+
+- **Embedding chuyển sang remote HTTP**: Repo không còn chạy local BGE-m3 (FlagEmbedding + torch). `EMBEDDING_PROVIDER` default đổi từ `bge` → `remote` (giá trị `bge` đã bỏ hoàn toàn). Thêm `EMBEDDING_BASE_URL` — base URL của server BGE-m3 HTTP (Colab ngrok hoặc server GPU tự host), endpoint `POST /embed` → `{"dense_vecs": [...]}`.
+- **Sparse embedding đã bỏ**: Retrieval dense-only (`RetrievalMode.DENSE`). Không còn `bge-m3-sparse` named vector, không còn hybrid search, không còn RRF/DBSF/fusion.
+- **Reranker chuyển sang remote HTTP**: `RERANK_PROVIDER` hỗ trợ `none` (default) và `remote` (giá trị `bge` đã bỏ). Thêm `RERANK_BASE_URL` — endpoint `POST /rerank` → `{"results": [{"index","document","score"}]}`.
+- **Env vars đã bỏ**: `EMBEDDING_MODEL`, `EMBEDDING_SIZE`, `SPARSE_MODEL`, `FUSION_ALGORITHM`/`hybrid_fusion`, `RERANK_MODEL`.
+
+### Added
+
+- **Env mới**: `EMBEDDING_BASE_URL`, `RERANK_BASE_URL`, `EMBEDDING_TIMEOUT` (default 60s), `RERANK_TIMEOUT` (default 60s).
+- **Docker image CUDA-free & model-cache-free**: Xoá `FlagEmbedding`, torch, transformers, sentence-transformers, scikit-learn, scipy, pandas, nvidia-*, triton khỏi `uv.lock`. `Dockerfile` bỏ `HF_HOME`/`UV_HTTP_TIMEOUT`. `docker-compose.yml` bỏ `hf_cache` volume + `extra_hosts`.
+- **Makefile `docker-clean`**: `docker compose down --remove-orphans -v && docker system prune -a --volumes -f` — dọn image/volume khi build fail.
+- **httpx>=0.28.1** thay `FlagEmbedding` trong `pyproject.toml`.
+- **Source**: `BGEM3RemoteEmbeddings` + `get_embedding_model(cfg)` (`src/agent/utils/embeddings.py`), `rerank_with_remote(...)` + `get_reranker(cfg, *, top_k=...)` (`src/agent/utils/reranker.py`), `get_retriever(k, *, cfg=None)` dense-only (`src/agent/utils/retriever.py`).
+- **Reference server**: notebook `rag_test_bge_m3_reranker_ngrok.ipynb` (chạy trên Colab T4, ngrok URL) ngoài repo.
+
 ## 7.0.0 (2026-07-23)
 
 ### Breaking Changes
