@@ -1,14 +1,14 @@
 # Retrieval & Search API (v7.0.0)
 
-Backend RAG retrieval service: trả về context (documents) cho downstream LLMs bằng model BGE-m3 (dense + sparse lexical weights) và BGE-reranker v2-m3 (optional). Branch `feature/retrieval-search-only` — chỉ retrieval & search, ingestion do hệ thống ngoài quản lý.
+Backend RAG retrieval service: trả về context (documents) cho downstream LLMs bằng remote BGE-m3 (dense, qua HTTP) và remote BGE-reranker v2-m3 (optional). Branch `feature/retrieval-search-only` — chỉ retrieval & search, ingestion do hệ thống ngoài quản lý. Docker image không load model (CUDA-free, model-cache-free).
 
 ## Features (v7.0.0)
 
-- **Retrieval-Only API**: `/rag` và `/rag/stream` trả về danh sách các document chunks đã qua hybrid retrieval + optional rerank (không sinh answer ở backend).
-- **Direct Semantic Search**: `/semantic/search` — hybrid search không qua graph pipeline.
+- **Retrieval-Only API**: `/rag` và `/rag/stream` trả về danh sách các document chunks đã qua dense retrieval (remote BGE-m3) + optional rerank (không sinh answer ở backend).
+- **Direct Semantic Search**: `/semantic/search` — dense search không qua graph pipeline.
 - **Health checks**: `/healthz` (liveness) + `/readyz` (Qdrant + collection readiness) cho Docker / Kubernetes.
-- **BGE-m3 Multi-functional Embedding**: Một model `BAAI/bge-m3` cho cả dense (1024-dim) và sparse (lexical weights) qua named vectors Qdrant (`bge-m3-sparse`).
-- **Optional BGE Reranker v2-m3**: Mặc định `RERANK_PROVIDER=none` (passthrough → tiết kiệm ~2GB RAM). Bật qua `RERANK_PROVIDER=bge`.
+- **Remote BGE-m3 Embedding**: Gọi BGE-m3 qua `EMBEDDING_BASE_URL` (Colab ngrok / server GPU Docker-light). Dense-only 1024-dim, không chạy local model trong container.
+- **Optional Remote BGE Reranker v2-m3**: Mặc định `RERANK_PROVIDER=none` (passthrough). Bật qua `RERANK_PROVIDER=remote` + `RERANK_BASE_URL`.
 - **LangGraph Graph (giữ nguyên)**: Pipeline retrieval 1-node `retriever` → END, dùng cho `/rag/`.
 - **DeepEval với Qwen Self-host**: Suite đánh giá `ContextualPrecision` và `ContextualRecall` chạy qua TestClient `POST /rag/`.
 
@@ -21,7 +21,7 @@ Backend RAG retrieval service: trả về context (documents) cho downstream LLM
 | GET | `/readyz` | Readiness probe (Qdrant OK + collection tồn tại) |
 | POST | `/rag/` | Retrieval qua LangGraph + optional rerank |
 | POST | `/rag/stream` | NDJSON stream của `/rag/` |
-| POST | `/semantic/search` | Direct hybrid search (no rerank) |
+| POST | `/semantic/search` | Direct dense search (no rerank) |
 
 > **Endpoints đã bỏ (chuyển sang repo ingestion ngoài):** `POST /collection/create/{name}`,
 > `POST /embeddings/documents`, `POST /embeddings/string/`, `DELETE /embeddings/delete/{source}`.
@@ -51,10 +51,11 @@ Bộ tài liệu bàn giao đầy đủ tại [`docs/`](docs/README.md):
 
 ## Quickstart
 
-1. Sao chép `template.env` thành `.env` (cập nhật `QDRANT_URL`, `QDRANT_COLLECTION_NAME`):
+1. Sao chép `template.env` thành `.env` (cập nhật `EMBEDDING_BASE_URL`, `RERANK_BASE_URL`, `QDRANT_URL`, `QDRANT_COLLECTION_NAME`):
    ```bash
    cp template.env .env
    ```
+   > Embedding/rerank chạy trên remote server (notebook `rag_test_bge_m3_reranker_ngrok.ipynb` trên Colab T4). Lấy ngrok URL, điền vào `EMBEDDING_BASE_URL` / `RERANK_BASE_URL` (nếu bật rerank). Repo Docker image không tải model.
 
 2. Sync dependencies và chạy:
    ```bash
@@ -88,15 +89,15 @@ Retrieval & Search API (FastAPI :8001)
     |
     GET  /healthz            (liveness - always 200 if process up)
     GET  /readyz             (Qdrant connectivity + collection)
-    POST /semantic/search    (direct hybrid search, no graph)
+    POST /semantic/search    (direct dense search, no graph)
     POST /rag/               (LangGraph: retriever + optional rerank)
     POST /rag/stream         (NDJSON stream)
     |
-    +-- BGE-m3 Dense  Embed (1024)
-    +-- BGE-m3 Sparse Embed (lex)
+    +-- Remote BGE-m3 Embed (1024 dense)  via EMBEDDING_BASE_URL (/embed)
+    +-- Remote BGE Reranker (optional)   via RERANK_BASE_URL (/rerank)
     |
     v
-Qdrant (Hybrid Search, RRF / DBSF)  <-- collection do he ngoai quan ly
+Qdrant (Dense Search, COSINE)  <-- collection do he ngoai quan ly
 ```
 
 ## Testing & Evaluation

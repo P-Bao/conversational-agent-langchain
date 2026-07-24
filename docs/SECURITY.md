@@ -57,18 +57,21 @@ server {
 
 ### Model Provenance
 
-Các model được tải từ HuggingFace Hub:
+> Từ v7.1 repo này **không pull/tải model** vào Docker container. BGE-m3 +
+> BGE-reranker-v2-m3 chạy trên **remote server** (Colab ngrok hoặc server GPU
+> riêng) — xem notebook `rag_test_bge_m3_reranker_ngrok.ipynb`. Container API
+> chỉ gọi HTTP tới `EMBEDDING_BASE_URL` / `RERANK_BASE_URL`.
 
-| Model | HuggingFace ID | Checksum / hash? |
-|---|---|---|
-| Dense | `BAAI/bge-m3` | Không verify |
-| Sparse | `BAAI/bge-m3` (shared) | Không verify |
-| Reranker (optional) | `BAAI/bge-reranker-v2-m3` | Không verify |
+| Model | Chạy ở đâu | HuggingFace ID | Checksum / hash? |
+|---|---|---|---|
+| Dense (BGE-m3) | Remote server (ngoài container) | `BAAI/bge-m3` | Do remote server verify |
+| Reranker (optional) | Remote server (ngoài container) | `BAAI/bge-reranker-v2-m3` | Do remote server verify |
 
 **Khuyến nghị production**:
-- Cache model và verify hash trước khi deploy.
-- Nếu môi trường internal không có internet, pre-download model từ máy tin cậy,
-  mount volume vào container.
+- Verify hash/sốported của remote server (nó chịu trách nhiệm tải model).
+- Bảo vệ ngrok URL / server endpoint bằng auth hoặc IP allowlist khi production
+  (Colab ngrok public URL là dev-only, không nên dùng production).
+- Pin phiên bản notebook server khi reproducibility quan trọng.
 
 ### File Upload (RFI)
 
@@ -80,12 +83,12 @@ Ingestion nằm ở repo ngoài — áp dụng security review cho repo ingestio
 ## 4. Dependency Security
 
 Project quản lý dependencies qua `uv.lock` — deterministic, reproducible builds.
-Các dependency đáng chú ý (v7.0.0 rút gọn so với v6):
+Từ v7.1 Docker image **không còn torch/transformers/sentence-transformers/
+FlagEmbedding/CUDA wheels** — embedding/rerank chạy trên HTTP server ngoài.
 
 | Package | Rủi ro | Mitigation |
 |---|---|---|
-| `torch` | Lớn, nhiều CVE | Update theo advisory |
-| `FlagEmbedding` | Ít maintainer | Pin version, monitor |
+| `httpx` | Network dependency (gọi remote server) | Pin version, set `EMBEDDING_TIMEOUT`/`RERANK_TIMEOUT` |
 | `qdrant-client` | Network dependency | Pin minor version |
 
 Scan định kỳ:

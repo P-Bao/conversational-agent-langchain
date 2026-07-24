@@ -51,7 +51,7 @@ Kiểm tra Qdrant có sẵn sàng + collection đang khai báo tồn tại.
 ## 4. POST `/rag/` — Retrieval Query
 
 Lấy danh sách document chunks liên quan đến query. Không sinh câu trả lời.
-Pipeline: LangGraph (`retriever` node) -> hybrid search -> optional rerank.
+Pipeline: LangGraph (`retriever` node) -> dense retrieval (remote BGE-m3) -> optional rerank.
 
 **Request Body** (`RAGRequest`):
 
@@ -88,7 +88,7 @@ Pipeline: LangGraph (`retriever` node) -> hybrid search -> optional rerank.
 ```
 
 Khi `RERANK_PROVIDER=none` thì `score` có thể `null` (chỉ retrieval thuần).
-Khi `RERANK_PROVIDER=bge` thì `score` là rerank score đã chuẩn hoá về [0, 1].
+Khi `RERANK_PROVIDER=remote` thì `score` là rerank score đã chuẩn hoá về [0, 1].
 
 **Curl example**:
 
@@ -144,7 +144,7 @@ async with httpx.AsyncClient() as client:
 
 ## 6. POST `/semantic/search` — Direct Semantic Search
 
-Tìm kiếm trực tiếp hybrid search, không qua graph pipeline (không rerank,
+Tìm kiếm trực tiếp dense search, không qua graph pipeline (không rerank,
 không graph). Phù hợp khi cần kết quả nhanh.
 
 **Request Body** (`SearchParams`):
@@ -181,9 +181,9 @@ Khi không có document nào, trả về:
 | GET | `/` | — | plain text | Welcome |
 | GET | `/healthz` | — | `{status: ok}` | Liveness probe |
 | GET | `/readyz` | — | `{status, collection}` hoặc `{status, reason}` | Readiness probe (Qdrant + collection) |
-| POST | `/rag/` | `RAGRequest` | `RetrievalResponse` | Hybrid retrieval + optional rerank (LangGraph) |
+| POST | `/rag/` | `RAGRequest` | `RetrievalResponse` | Dense retrieval (remote BGE-m3) + optional rerank (LangGraph) |
 | POST | `/rag/stream` | `RAGRequest` | NDJSON stream | Streaming retrieval |
-| POST | `/semantic/search` | `SearchParams` | `SearchResponse[]` | Direct hybrid search (no rerank) |
+| POST | `/semantic/search` | `SearchParams` | `SearchResponse[]` | Direct dense search (no rerank) |
 
 ## 8. Endpoints Đã Loại Bỏ (v7)
 

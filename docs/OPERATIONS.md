@@ -53,14 +53,14 @@ curl http://localhost:8001/readyz
 ### API startup logs (success path):
 
 ```
-Loading BGE-m3 model: BAAI/bge-m3
+Using remote BGE-m3 embedding endpoint: <EMBEDDING_BASE_URL>
 Startup: Retrieval & Search API v7.0.0
 Loading REST API Finished.
 ```
 
-Nếu `RERANK_PROVIDER=bge` thì thêm dòng:
+Nếu `RERANK_PROVIDER=remote` thì log thêm khi rerank thật sự được gọi:
 ```
-Loading BGE-reranker-v2-m3 model
+Remote reranked N documents to top M
 ```
 
 ## 4. Logs & Troubleshooting
@@ -78,7 +78,7 @@ docker logs --tail 100 conversational-rag-api
 docker logs conversational-rag-api 2>&1 | grep -E "ERROR|CRITICAL"
 
 # Filter specifc component
-docker logs conversational-rag-api 2>&1 | grep "BGE-m3"
+docker logs conversational-rag-api 2>&1 | grep "remote BGE-m3"
 docker logs conversational-rag-api 2>&1 | grep "Qdrant"
 ```
 
@@ -122,45 +122,48 @@ curl http://localhost:8001/readyz
 | Metric | How to check | Threshold |
 |---|---|---|
 | API response time | `curl -w "%{time_total}"` | < 2s (with cache warm) |
-| Embedding time (first) | Container logs: "Loading BGE-m3 model" → Done | < 180s |
-| Rerank time | Logs: "BGE reranked N docs to top M" (chỉ khi RERANK_PROVIDER=bge) | < 2s |
-| Memory usage | `docker stats conversational-rag-api` | < 8GB nếu RERANK_PROVIDER=none |
-| Memory usage (reranker on) | `docker stats conversational-rag-api` | < 12GB |
-| Disk | `docker system df` | Varies |
+| Embedding time (first) | Container logs: "Using remote BGE-m3 embedding endpoint" → first /rag response | < 60s (tuỳ latency mạng tới remote server) |
+| Rerank time | Logs: "Remote reranked N docs to top M" (chỉ khi RERANK_PROVIDER=remote) | < 2s + mạng tới remote server |
+| Memory usage | `docker stats conversational-rag-api` | ~512MB-1GB (model sống trên remote server) |
+| Disk | `docker system df` | Varies (không có HF cache volume) |
 
 ### Alert Triggers:
 
 - API container restarting (CrashLoopBackOff): check Qdrant connectivity
 - `Connection refused [Errno 111]` in logs: Qdrant down hoặc `QDRANT_URL` sai
 - `/readyz` liên tục 503: collection chưa tồn tại hoặc Qdrant mất kết nối
-- `CUDA out of memory` (GPU): giảm concurrent requests, bật `RERANK_PROVIDER=none`
+- Embedding/rerank timeout: remote server (`EMBEDDING_BASE_URL`/`RERANK_BASE_URL`) down hoặc ngrok session hết hạn — tăng `EMBEDDING_TIMEOUT`/`RERANK_TIMEOUT` nếu network chậm
 
 ## 7. Capacity Planning
 
 | Tài nguyên | Dự kiến dùng | Ghi chú |
 |---|---|---|
-| RAM per API container (no rerank) | 4-6 GB | Chỉ BGE-m3 embed loaded |
-| RAM per API container (rerank bge) | 6-10 GB | BGE-m3 + BGE-reranker-v2-m3 loaded |
+| RAM per API container | ~512MB-1GB | Docker image không load model (embedding/rerank trên remote server) |
 | RAM per Qdrant | 1-4 GB | Tuỳ số vector |
 | Disk per Qdrant | 100MB - 10GB | Tuỳ dataset |
-| CPU per request | 1-2 core seconds | Embedding CPU-bound |
-| HF model cache | ~5 GB | `~/.cache/huggingface` volume |
+| CPU per request | thấp | Embedding/rerank delegate ra HTTP, API chỉ orchestrator |
+| Remote GPU server (Colab ngrok) | ~6-10 GB | Chạy BGE-m3 + (optional) reranker — nằm ngoài Docker image này |
 
 ## 8. Updating Models
 
-Cập nhật model embedding:
+Cập nhật model embedding/rerank (model sống trên remote server, không trong
+Docker image này):
 
-1. Update `.env`:
+1. Cập nhật remote server (Colab notebook `rag_test_bge_m3_reranker_ngrok.ipynb`
+   hoặc server GPU riêng) để chạy model mới. Lấy URL HTTP/ngrok mới.
+2. Update `.env`:
    ```env
-   EMBEDDING_MODEL=<new-model>
-   EMBEDDING_SIZE=<new-dim>
+   EMBEDDING_BASE_URL=<new-url-of-server-running-new-model>
+   RERANK_BASE_URL=<new-url>   (nếu RERANK_PROVIDER=remote)
    ```
-2. Rebuild container:
+   Không cần rebuild image (không có local model cache để clear).
+3. Restart API container:
    ```bash
-   docker compose build --no-cache && docker compose up -d
+   docker compose restart
    ```
-3. **Repo ingestion ngoài** cần re-create collection với `EMBEDDING_SIZE` mới
-   và re-upsert toàn bộ data.
+4. **Repo ingestion ngoài** cần re-create collection với dense size mới (nếu
+   model mới đổi dim) và re-upsert toàn bộ data. Repo này dense-only, không
+   cần cấu hình sparse named vector.
 
 ## 9. Cleanup
 
@@ -169,8 +172,9 @@ Cập nhật model embedding:
 docker system prune -f          # xóa stopped containers, unused networks
 docker builder prune -f         # xóa build cache
 
-# Xóa HF model cache (sẽ re-download)
-rm -rf ~/.cache/huggingface/models--BAAI--*
+# Khi build fail / muốn khởi động lại sạch hoàn toàn
+make docker-clean
 
+# Không có HF model cache trong repo này — model chạy trên remote server.
 # Không có migration script / checkpoint files để xóa trong repo này
 ```

@@ -8,7 +8,7 @@
 | uv | 0.5+ | Project package manager |
 | Docker + Docker Compose | Docker 24+, Compose v2 | Cho production deployment |
 | Qdrant | 1.18+ | Vector database chạy riêng biệt, **collection do hệ ngoài dựng** |
-| GPU (CUDA) | Optional | Không bắt buộc — CPU fallback OK, chậm hơn 3-5x |
+| Remote BGE-m3 server | — | Colab ngrok hoặc self-host GPU server (chạy notebook `rag_test_bge_m3_reranker_ngrok.ipynb`). API container chỉ gọi HTTP, không cần GPU/CUDA |
 
 ## 2. Cài Đặt Local (Development)
 
@@ -56,13 +56,16 @@ QDRANT_URL=http://localhost
 QDRANT_PORT=6333
 QDRANT_COLLECTION_NAME=documents
 
-# === Embedding (giữ mặc định) ===
-EMBEDDING_PROVIDER=bge
-EMBEDDING_MODEL=BAAI/bge-m3
-EMBEDDING_SIZE=1024
+# === Embedding (remote BGE-m3 — chạy notebook Colab trước) ===
+EMBEDDING_PROVIDER=remote
+EMBEDDING_BASE_URL=https://xxxx.ngrok-free.app
+# EMBEDDING_TIMEOUT=60
 
 # === Default không rerank ===
 RERANK_PROVIDER=none
+RERANK_BASE_URL=https://xxxx.ngrok-free.app
+RERANK_TOP_K=5
+# RERANK_TIMEOUT=60
 ```
 
 ### Bước 5: Verify
@@ -162,22 +165,24 @@ curl http://localhost:6333/
 
 Chi tiết xem [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
-### Embedding load chậm
+### Embedding endpoint không trả lời
 
-Lần đầu chạy, model BGE-m3 (2.2GB) được tự động tải từ HuggingFace Hub về
-`~/.cache/huggingface`. Có thể mất 2-5 phút tuỳ bandwidth.
+API container không tải model — embedding/rerank delegate tới remote server qua
+`EMBEDDING_BASE_URL` / `RERANK_BASE_URL`. Nếu query treo hoặc timeout:
 
-Mặc định reranker **đã TẮT** (`RERANK_PROVIDER=none`) nên không cần download
-BGE-reranker-v2-m3. Nếu bật reranker, tốn thêm 2.2GB.
+1. Mở notebook `rag_test_bge_m3_reranker_ngrok.ipynb` trên Colab (T4), chạy hết
+   cell để khởi động server + lấy ngrok public URL.
+2. Cập nhật `.env`: `EMBEDDING_BASE_URL` (và `RERANK_BASE_URL` nếu rerank) bằng
+   URL ngrok mới (`https://xxxx.ngrok-free.app`).
+3. Restart API: `docker compose restart` (hoặc `uv run uvicorn ... --reload`).
 
-Nếu RERANK_PROVIDER=bge → phải chạy startup `Loading BGE-reranker-v2-m3 model`,
-mất thời gian tương tự.
+> Colab ngrok URL đổi mỗi lần notebook stop/start. Nếu production, dùng self-host
+> GPU server có fixed URL. `EMBEDDING_TIMEOUT` / `RERANK_TIMEOUT` (default 60s)
+> configurable nếu remote server chậm.
 
-### Lỗi torch / CUDA
+### Không còn torch / CUDA
 
-Nếu không có GPU, code tự động dùng CPU (`use_fp16=False`). Không cần cài CUDA.
-Nếu gặp lỗi torch:
-
-```bash
-uv run python -c "import torch; print(torch.__version__)"
-```
+API container không còn dependency `torch` / `transformers` / `FlagEmbedding`
+(embedding remote). Không cần cài CUDA trong container. Nếu thấy import torch
+thất bại, kiểm tra `pyproject.toml` không còn `FlagEmbedding` — chạy `uv sync`
+lại.

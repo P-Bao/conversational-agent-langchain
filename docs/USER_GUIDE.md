@@ -213,10 +213,10 @@ ingestion hoặc kiểm tra tại Qdrant dashboard.
 
 **Q: Score cao = document rất phù hợp?**
 
-A: Score từ BGE-reranker (normalized 0-1). Score cao hơn là relevant hơn.
-Tuy nhiên không phải threshold tuyệt đối — cùng query, scores so sánh giữa
-các documents. Nếu `RERANK_PROVIDER=none`, `score` sẽ là `null` (chỉ có raw
-retrieval score trong metadata nếu có).
+A: Score từ reranker (BGE-reranker-v2-m3 qua remote server, normalized 0-1).
+Score cao hơn là relevant hơn. Tuy nhiên không phải threshold tuyệt đối — cùng
+query, scores so sánh giữa các documents. Nếu `RERANK_PROVIDER=none`, `score`
+sẽ là `null` (chỉ có raw retrieval score trong metadata nếu có).
 
 **Q: Tôi muốn upload file PDF của tôi lên hệ thống?**
 
@@ -231,5 +231,6 @@ EVALUATION.
 
 **Q: Timeout?**
 
-A: Lần đầu API gọi có thể chậm do model load (2-5 phút). Các request sau
-nhanh hơn. Nếu timeout, tăng timeout lên 120s cho request đầu tiên.
+A: Lần đầu API gọi có thể chậm do remote embedding server đang load model
+(1-2 phút). Repo Docker image không load model — tất cả nằm trên remote server.
+Nếu timeout, tăng `EMBEDDING_TIMEOUT` / timeout client lên 120s cho request đầu.

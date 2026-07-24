@@ -19,11 +19,11 @@ conversational-agent-langchain/
 │   │   ├── search.py               # POST /semantic/search
 │   │   └── health.py               # GET /healthz, /readyz
 │   └── utils/
-│       ├── config.py               # Pydantic Settings (rerank_provider default = "none")
-│       ├── embeddings.py           # BGE-m3 dense + sparse
+│       ├── config.py               # Pydantic Settings (embedding_provider=remote, rerank_provider=none)
+│       ├── embeddings.py           # Remote BGE-m3 dense (HTTP) — BGEM3RemoteEmbeddings
 │       ├── vdb.py                  # Qdrant client (sync + async) — No collection mgmt
-│       ├── retriever.py            # Hybrid retriever (RRF/DBSF)
-│       └── reranker.py             # get_reranker() — providers: none / bge
+│       ├── retriever.py            # Dense retriever (RetrievalMode.DENSE, no fusion)
+│       └── reranker.py             # get_reranker(cfg, *, top_k) — providers: none / remote
 ├── tests/
 │   ├── conftest.py
 │   ├── unit_tests/
@@ -76,18 +76,19 @@ conversational-agent-langchain/
 | Pattern | Ví dụ |
 |---|---|
 | Module | `embeddings.py`, `vdb.py` |
-| Class | `BGE3Embeddings`, `QdrantClient` (singleton module-level) |
+| Class | `BGEM3RemoteEmbeddings`, `QdrantClient` (singleton module-level) |
 | Function | `get_embedding_model`, `get_retriever` |
-| Private | `_get_bge3_model`, `_embeddings_cache` |
-| Config field | `embedding_model`, `qdrant_url` |
-| Env var | `EMBEDDING_MODEL`, `QDRANT_URL` |
+| Private | `_get_cached_embedding`, `_vector_store_cache` |
+| Config field | `embedding_base_url`, `qdrant_url` |
+| Env var | `EMBEDDING_BASE_URL`, `QDRANT_URL` |
 
 ### No circular imports:
 
 - `config.py` không import từ `agent.*` (độc lập)
-- `embeddings.py` import `Config` (đọc model name)
+- `embeddings.py` import `Config` (đọc base URL)
 - `vdb.py` import `Config`
 - `retriever.py` import `Config` + `embeddings` + `vdb`
+- `reranker.py` import `Config`
 - `health.py` import `Config` + `vdb`
 - Routes import từ `utils.*`, `backend.*`, `data_model.*`
 
@@ -107,10 +108,10 @@ conversational-agent-langchain/
 Theo pattern có sẵn trong `embeddings.py`:
 
 ```python
-# 1. Thêm case trong get_embedding_model()
+# 1. Thêm case trong get_embedding_model(cfg)
 match provider:
-    case "bge" | "flagembedding":
-        return BGE3Embeddings(_get_bge3_model(cfg))
+    case "remote":
+        return BGEM3RemoteEmbeddings(cfg.embedding_base_url)
     case "my_new_provider":
         return MyNewEmbeddings(...)
 
@@ -123,6 +124,8 @@ my_provider_api_key: str = ""
 # MY_PROVIDER_API_KEY=
 ```
 
+> Local `bge` (FlagEmbedding) đã bị loại bỏ — không chạy model trong Docker.
+
 ## 5. Modifying the Retriever / Reranker Flow
 
 Pipeline graph: `src/agent/backend/nodes/retrieval.py`.
@@ -133,8 +136,9 @@ Thay đổi ở đây ảnh hưởng tới cả `/rag/`, `/rag/stream`, `/semant
 | Behavior | File cần sửa |
 |---|---|
 | Thay đổi K | `.env`: `RETRIEVAL_K` |
-| Thay đổi fusion | `.env`: `FUSION_ALGORITHM` |
+| Thay đổi base URL remote | `.env`: `EMBEDDING_BASE_URL` |
 | Thay đổi rerank provider | `.env`: `RERANK_PROVIDER` |
+| Thay đổi base URL reranker | `.env`: `RERANK_BASE_URL` |
 | Thay đổi số doc sau rerank | `.env`: `RERANK_TOP_K` |
 | Thêm bước sau rerank | `src/agent/backend/nodes/retrieval.py` |
 

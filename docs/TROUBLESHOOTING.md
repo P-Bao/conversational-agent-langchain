@@ -61,42 +61,53 @@ curl -i http://localhost:8001/readyz
 
 Warning, không fatal. Gọi API Qdrant không có SSL. Dùng HTTP cho local dev.
 
-## 2. Model Download / Loading
+## 2. Remote Embedding / Rerank Server
 
-### Lỗi: `OSError: Can't load tokenizer for 'BAAI/bge-m3'`
+### Lỗi: `Cannot reach remote embedding server` / httpx ConnectError
 
-**Nguyên nhân**: Không truy cập được HuggingFace Hub (network restriction / proxy).
+**Nguyên nhân**: `EMBEDDING_BASE_URL` sai, không set, hoặc remote server
+(Colab ngrok / server GPU) đang down / ngrok session hết hạn.
+
+**Checklist:**
+
+```bash
+# 1. Env trong container đúng không?
+docker exec conversational-rag-api bash -c 'env | grep EMBEDDING'
+
+# 2. URL có ping được từ container không?
+docker exec conversational-rag-api curl -i $EMBEDDING_BASE_URL/
+
+# 3. Ngrok tunnel còn sống không? (mở URL trên browser / Colab cell)
+#    Colab free session có thể ngắt sau vài giờ — restart notebook.
+```
 
 **Fix:**
 
-```bash
-# Dùng mirror cho China / nội bộ
-HF_ENDPOINT=https://hf-mirror.com docker compose up --build -d
+| Scenario | Fix |
+|---|---|
+| `EMBEDDING_BASE_URL` trống | Set trong `.env` theo notebook `rag_test_bge_m3_reranker_ngrok.ipynb` |
+| Ngrok tunnel chết | Restart Colab notebook cell ngrok, lấy URL mới, update `.env` + restart API |
+| Network chậm / timeout | Tăng `EMBEDDING_TIMEOUT` (mặc định 60s) trong `.env` |
+| Server trả non-200 | Xem §3 lỗi "remote /embed returns non-200" |
 
-# Hoặc download model trước, mount thủ công
-uv run huggingface-cli download BAAI/bge-m3
-```
+### Lỗi: `remote /embed returns non-200` / `remote /rerank returns non-200`
 
-Nếu môi trường không có internet, tải model từ máy khác và mount vào container:
+**Nguyên nhân**: remote server up nhưng endpoint trả lỗi (sai schema, server
+đang load model, OOM trên GPU Colab).
 
-```yaml
-volumes:
-  - /local/path/to/models:/root/.cache/huggingface
-```
+**Fix:**
+- Mở Colab notebook, xem cell log server (traceback Python).
+- Thường là server đang load model lần đầu → đợi ~1-2 phút rồi retry.
+- Nếu OOM trên Colab T4 → giảm batch, restart runtime.
 
-### Lỗi: `RuntimeError: "LayerNormKernelImpl" not implemented for 'Half'`
+### Lỗi: Model load rất chậm trên remote server (phút)
 
-**Nguyên nhân**: CPU không support FP16. Code đã fix bằng `use_fp16 = torch.cuda.is_available()`. Nếu vẫn gặp:
+Lần đầu Colab/server tải BGE-m3 (~2.2GB) từ HuggingFace → phụ thuộc bandwidth.
+Sau khi model đã nằm trong Colab runtime, các request sau nhanh. Repo Docker
+image này **không** tải model — tất cả nằm trên remote server.
 
-**Fix**: Kiểm tra torch version. Cài CPU-only torch nếu không có GPU.
-
-### Lỗi: Model load rất chậm (phút)
-
-Lần đầu load model (2.2GB) từ HuggingFace → phụ thuộc bandwidth.
-Các lần sau dùng cache volume `bge_hf_cache`. Nếu vẫn chậm → kiểm tra tốc độ mạng.
-
-> Ở v7 mặc định `RERANK_PROVIDER=none` → **chỉ load embedding** (1 model).
-> Nếu set `RERANK_PROVIDER=bge` còn phải load thêm reranker (~200MB thời gian).
+> Mặc định `RERANK_PROVIDER=none` → server chỉ cần load embedding.
+> Nếu set `RERANK_PROVIDER=remote` thì server còn tải thêm reranker (~200MB).
 
 ## 3. Search / Retrieval
 
@@ -115,11 +126,12 @@ curl -X POST http://localhost:6333/collections/documents/points/search \
   -d '{"vector": [0]*1024, "limit": 1}'
 ```
 
-### Lỗi: `Unknown fusion_algorithm: '...'`
+### Lỗi: `Unknown reranker provider: '...'`
 
-**Nguyên nhân**: `FUSION_ALGORITHM` trong `.env` không hợp lệ.
+**Nguyên nhân**: `RERANK_PROVIDER` trong `.env` không hợp lệ (giá trị cũ `bge`
+đã bỏ ở v7.1).
 
-**Fix**: Chỉ chấp nhận `rrf` hoặc `dbsf`. Xem [CONFIGURATION.md](CONFIGURATION.md) §3.
+**Fix**: Chỉ chấp nhận `none` (default) hoặc `remote`. Xem [CONFIGURATION.md](CONFIGURATION.md) §3.
 
 ### Lỗi: 422 Validation Error ở `/rag/` hoặc `/semantic/search`
 
@@ -187,6 +199,6 @@ curl -i -X DELETE http://localhost:8001/embeddings/delete/x?collection_name=x
 
 | Bug | Workaround | Status |
 |---|---|---|
-| `get_reranker(provider="cohere")` raise `ValueError` | Cohere/FlashRank đã bỏ ở v7 — chuyển sang `provider="none"` hoặc `"bge"` | By design |
+| `get_reranker(provider="cohere")` raise `ValueError` | Cohere/FlashRank/local `bge` đã bỏ ở v7 — chuyển sang `provider="none"` hoặc `"remote"` (HTTP server ngoài) | By design |
 | Frontend cũ (v6) gọi `/embeddings/documents` → 404 | Frontend phải làm việc với API v7 (chỉ retrieval); ingestion tách riêng | Migrate frontend |
-| Conftest cũ dùng env var cũ (`AU_EMBED_MODEL_NAME`) | Conftest v7 chỉ set các env mới (`EMBEDDING_MODEL`, v.v.). Code Config có alias backward-compat | Backward-compat |
+| Conftest cũ dùng env var cũ (`AU_EMBED_MODEL_NAME`, `EMBEDDING_MODEL`) | Conftest v7.1 set env remote (`EMBEDDING_BASE_URL`, v.v.). `EMBEDDING_MODEL`/`SPARSE_MODEL`/`FUSION_ALGORITHM` đã bỏ | Remove old vars |

@@ -38,13 +38,13 @@ Các test file trong `tests/unit_tests/` (v7.0.0):
 
 | File | Mục đích |
 |---|---|
-| `test_search.py` | `POST /semantic/search` route, `get_retriever` RRF/DBSF/cache, fusion invalid |
+| `test_search.py` | `POST /semantic/search` route, `get_retriever` dense-only/cache (không còn RRF/DBSF/fusion) |
 | `test_rag_route.py` | `POST /rag/` + `POST /rag/stream`, NDJSON events |
 | `test_retrieval_node.py` | `retrieve_documents` qua LangGraph: K, retry, rerank skip/apply |
-| `test_reranker.py` | `get_reranker(provider=...)`: none / bge / cohere-removed / flashrank-removed |
+| `test_reranker.py` | `get_reranker(provider=...)`: none / remote (bge/cohere/flashrank đã bỏ) |
 | `test_vdb.py` | `qdrant_client` & `async_qdrant_client` singleton |
-| `test_config.py` | Pydantic `Config` defaults (embedding/qdrant/retrieval/fusion/rerank) |
-| `test_embeddings_bge.py` | `BGE3Embeddings` (dense) + `BGE3SparseEmbeddings` (sparse) wrapper |
+| `test_config.py` | Pydantic `Config` defaults (`embedding_provider=remote`, `embedding_base_url=""`, `rerank_provider=none`, qdrant, retrieval, rerank) |
+| `test_embeddings_bge.py` | `BGEM3RemoteEmbeddings` wrapper (test qua mocked httpx, không load model thật) |
 | `test_health.py` | `/healthz` + `/readyz` (collection_exists + error branches) |
 
 ### Contract Tests (VCR):
@@ -76,8 +76,8 @@ Chi tiết xem [EVALUATION.md](EVALUATION.md).
 
 ### `tests/conftest.py`:
 
-- `test_env_defaults`: set mặc định env vars cho test (`EMBEDDING_PROVIDER=bge`,
-  `EMBEDDING_MODEL=BAAI/bge-m3`, `RERANK_PROVIDER=none`, `QDRANT_URL=...`).
+- `test_env_defaults`: set mặc định env vars cho test (`EMBEDDING_PROVIDER=remote`,
+  `EMBEDDING_BASE_URL=http://mock` mock, `RERANK_PROVIDER=none`, `QDRANT_URL=...`).
 - `block_external_http`: mặc định chặn HTTP ra ngoài (trừ localhost). Bỏ qua
   nếu `ALLOW_NETWORK_TESTS=1` hoặc test có marker `vcr` / `qwen`.
 - `app` fixture: import FastAPI app (v7 không có module-level side effects nên
@@ -87,15 +87,16 @@ Chi tiết xem [EVALUATION.md](EVALUATION.md).
 ### Environment cho tests:
 
 ```bash
-EMBEDDING_PROVIDER=bge
-EMBEDDING_MODEL=BAAI/bge-m3
-EMBEDDING_SIZE=1024
-SPARSE_MODEL=BAAI/bge-m3
+EMBEDDING_PROVIDER=remote
+EMBEDDING_BASE_URL=http://mock-embedding
+EMBEDDING_TIMEOUT=60
 RERANK_PROVIDER=none
-RERANK_MODEL=BAAI/bge-reranker-v2-m3
+RERANK_BASE_URL=http://mock-reranker
+RERANK_TIMEOUT=60
 QDRANT_URL=http://localhost
 QDRANT_PORT=6333
 QDRANT_API_KEY=test_api_key
+QDRANT_COLLECTION_NAME=documents
 ```
 
 ## 5. Fixtures
@@ -107,8 +108,8 @@ QDRANT_API_KEY=test_api_key
 | `resources_path` | session | Path đến `tests/resources/` |
 | `vcr_config` | module | VCR config (filter headers, record mode) |
 | `golden_questions` | module | Load `tests/golden_questions_v2.json` (DeepEval) |
-| `eval_llm` | module | `NvidiaEvalLLM` hoặc `QwenEvalLLM` (DeepEval) |
-| `rag_client` | module | `TestClient` cho DeepEval suite |
+| `eval_llm` | module | `NvidiaEvalLLM` hoặc `QwenEvalLLM` (DeepEval) — chọn qua `TEST_EVAL_BACKEND` hoặc auto-detect |
+| `rag_api_url` | module | Base URL API Docker thật (default `http://localhost:8001`, override qua `RAG_API_URL`) |
 
 ## 6. Coverage
 

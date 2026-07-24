@@ -19,16 +19,17 @@ Retrieval & Search API (FastAPI :8001)
     +-- GET  /healthz               (liveness)
     +-- GET  /readyz                (Qdrant connectivity + collection exists)
     |
-    +-- POST /semantic/search       (direct hybrid search, no rerank)
-    +-- POST /rag/                  (LangGraph: hybrid retrieval + optional rerank)
+    +-- POST /semantic/search       (direct dense search, no rerank)
+    +-- POST /rag/                  (LangGraph: dense retrieval + optional rerank)
     +-- POST /rag/stream            (NDJSON stream của /rag/)
     |
-    +-- BGE-m3 Dense  Embed (1024) --+
-    +-- BGE-m3 Sparse Embed (lex)  --+
+    +-- HTTP --> Remote BGE-m3 Embed Server (Colab ngrok / GPU server)
+    |                POST /embed  ->  {"dense_vecs": [[float,...],...]}
     |                                v
-    |   Qdrant (Hybrid Search, RRF / DBSF)  <-- collection do he ngoai dung
+    |   Qdrant (Dense Search, RetrievalMode.DENSE)  <-- collection do he ngoai dung
     |                                |
-    +-- BGE Reranker v2-m3 -- (optional, default = none) --+
+    +-- HTTP --> Remote Reranker Server (optional, default = none)
+    |                POST /rerank ->  {"results": [{"index":int,"score":float},...]}
     |
     v
 JSON: RetrievalResponse(query, documents[])
@@ -40,8 +41,8 @@ JSON: RetrievalResponse(query, documents[])
 
 | Route Module | Endpoint | Mô tả |
 |---|---|---|
-| `rag.py` | `POST /rag/`, `POST /rag/stream` | Hybrid retrieval qua LangGraph + optional rerank |
-| `search.py` | `POST /semantic/search` | Direct hybrid search, không rerank, không graph |
+| `rag.py` | `POST /rag/`, `POST /rag/stream` | Dense retrieval qua LangGraph + optional rerank |
+| `search.py` | `POST /semantic/search` | Direct dense search, không rerank, không graph |
 | `health.py` | `GET /healthz`, `GET /readyz` | Liveness + readiness (Qdrant connectivity) |
 
 ### 2.2 Data Models (`src/agent/data_model/`)
@@ -53,14 +54,14 @@ JSON: RetrievalResponse(query, documents[])
 
 - `graph.py` — LangGraph `StateGraph` pipeline: `entry -> retriever -> END`. **Giữ nguyên kiến trúc graph gốc.**
 - `state.py` — `AgentState(TypedDict)`: query, documents, messages, retry_count
-- `nodes/retrieval.py` — `retrieve_documents()`: gọi `get_retriever` hybrid + `get_reranker`. Trả về documents + query + retry_count.
+- `nodes/retrieval.py` — `retrieve_documents()`: gọi `get_retriever` (dense) + `get_reranker`. Trả về documents + query + retry_count.
 
 ### 2.4 Utilities (`src/agent/utils/`)
 
-- `config.py` — Pydantic Settings, đọc từ `.env`. Reranker provider mặc định = `"none"` (passthrough).
-- `embeddings.py` — `BGE3Embeddings` (dense) + `BGE3SparseEmbeddings` (sparse), share 1 `BGEM3FlagModel`.
-- `retriever.py` — Hybrid retriever wrapper (RRF/DBSF fusion), cache `QdrantVectorStore` theo `collection_name`.
-- `reranker.py` — `get_reranker()` với 2 providers: `bge` (local `BAAI/bge-reranker-v2-m3`) và `none` (passthrough). Cohere + FlashRank đã bị loại bỏ ở v7.
+- `config.py` — Pydantic Settings, đọc từ `.env`. Embedding/rerank provider mặc định `remote` / `none`.
+- `embeddings.py` — `BGEM3RemoteEmbeddings` (dense), gọi HTTP `POST /embed` tới `EMBEDDING_BASE_URL`. Xem `embeddings.py:29`.
+- `retriever.py` — Dense retriever wrapper (`RetrievalMode.DENSE`), cache `QdrantVectorStore` theo `collection_name`. Không còn hybrid/fusion.
+- `reranker.py` — `get_reranker(cfg, *, top_k=...)` với 2 providers: `none` (passthrough) và `remote` (HTTP `POST /rerank` tới `RERANK_BASE_URL`). `bge` local đã loại bỏ. Xem `reranker.py:62`.
 - `vdb.py` — Chỉ `QdrantClient` + `AsyncQdrantClient` singleton. CRUD collection / embed / init vdb đã chuyển sang hệ ngoài.
 
 ## 3. Data Flow Chi Tiết
@@ -72,8 +73,8 @@ POST /rag/  body: { "messages": [...], "collection_name": "..." }
   1. RAGRequest -> graph.with_config({"metadata": {"collection_name": ...}}).ainvoke(...)
   2. LangGraph chạy "retriever" node
   3. nodes/retrieval.py :: retrieve_documents -> get_retriever(collection_name, k)
-  4. retriever.invoke(query) -> Qdrant hybrid search (dense + sparse, RRF/DBSF fusion)
-  5. Nếu Config.rerank_provider != "none": get_reranker(provider=top_k) -> rerank
+  4. retriever.invoke(query) -> Qdrant dense search (RetrievalMode.DENSE, remote BGE-m3 embed)
+  5. Nếu Config.rerank_provider != "none": get_reranker(cfg, top_k=...) -> remote rerank
   6. Trả về RetrievalResponse(query, documents[])
 ```
 
@@ -103,11 +104,10 @@ GET /readyz  -> 200 {"status": "ready", "collection": "default"} (Qdrant OK + co
 |---|---|
 | Retrieval-only (không LLM sinh answer) | Backend pure context provider; downstream LLM tự xử lý response. Giảm tài nguyên GPU local. |
 | Tách retrieval khỏi collection management | Repo này chỉ đọc Qdrant đã có sẵn; ingestion / CRUD thuộc hệ ngoài tránh duplicate responsibility. |
-| BGE-m3 cho cả dense + sparse | Một forward pass ra 3 mode (dense/sparse/colbert) — tiết kiệm RAM+CPU. Singleton instance chia sẻ. |
-| FlagEmbedding thay vì FastEmbed | FastEmbed chưa support BGE-m3 đầy đủ (thiếu sparse). FlagEmbedding cung cấp `BGEM3FlagModel`. |
-| Qdrant hybrid search (RRF/DBSF) | Kết hợp dense (ngữ nghĩa) + sparse (từ vựng) cho search đa ngữ, đặc biệt tiếng Việt cần exact match từ khoá. |
-| `use_fp16 = torch.cuda.is_available()` | Tránh CPU hang khi forced FP16. Tự động tắt FP16 trên CPU. |
-| Reranker default = `"none"` | Không load BGE-reranker khi không cần; người dùng bật qua `RERANK_PROVIDER=bge`. |
+| Remote BGE-m3 thay vì local | Docker image nhẹ, không tải model ~2.7GB, không phụ thuộc CUDA/torch wheels. Model chạy trên Colab T4 / server GPU riêng qua HTTP. |
+| Dense-only (`RetrievalMode.DENSE`) | Remote endpoint chỉ trả dense vecs. Bỏ sparse/hybrid/RRF/DBSF — đơn giản hoá retrieval, giảm latency. |
+| `EMBEDDING_BASE_URL` bắt buộc | Là base URL của remote server (Colab ngrok / self-hosted). Không có default;.env phải điền. |
+| Reranker default = `"none"` | Passthrough nếu không cần precision; bật `RERANK_PROVIDER=remote` + `RERANK_BASE_URL` để dùng remote BGE-reranker. |
 | LangGraph giữ nguyên | Đảm bảo tương thích với downstream consumers; chỉ rút gọn module xung quanh. |
 
 ## 5. Biểu Đồ Thành Phần

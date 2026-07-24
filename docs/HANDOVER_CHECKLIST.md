@@ -24,7 +24,7 @@
 - [x] `template.env` — mẫu, copy sang `.env` trước khi chạy
 - [x] `.env` — file làm việc thực tế (đã khớp template)
 - [x] Tất cả env vars đều có default an toàn trong `config.py`
-- [x] Backward-compat: `AU_EMBED_MODEL_NAME` (→ `EMBEDDING_MODEL`), v.v.
+- [x] Backward-compat: `AU_EMBED_BASE_URL` (→ `EMBEDDING_BASE_URL`), `AU_RERANK_BASE_URL` (→ `RERANK_BASE_URL`). Các var cũ (`EMBEDDING_MODEL`, `SPARSE_MODEL`, `FUSION_ALGORITHM`, `RERANK_MODEL`, `RERANK_PROVIDER=bge`) đã bỏ.
 
 ## 4. API Endpoints (v7.0.0)
 
@@ -33,7 +33,7 @@
 - [x] `GET /readyz` — Readiness probe (Qdrant + collection)
 - [x] `POST /rag/` — `RetrievalResponse` (LangGraph + optional rerank)
 - [x] `POST /rag/stream` — NDJSON stream
-- [x] `POST /semantic/search` — `SearchResponse[]` (direct hybrid search)
+- [x] `POST /semantic/search` — `SearchResponse[]` (direct dense search, no rerank)
 
 ### Endpoints đã loại (chuyển hệ ingestion ngoài)
 
@@ -81,10 +81,10 @@
 | # | Vấn đề | Workaround / Fix | Mức ảnh hưởng |
 |---|---|---|---|
 | 1 | `QDRANT_URL=http://qdrant` nhầm thành double `=` | Default `http://qdrant` trong template.env. Verify container network. | Critical |
-| 2 | Lần đầu startup, model BGE-m3 (2.2GB) download từ HuggingFace | Set `HF_ENDPOINT=https://hf-mirror.com` ở China. Cache volume `bge_hf_cache` qua restart. | Medium |
-| 3 | Qdrant collection mới cần recreate khi `EMBEDDING_SIZE` đổi | Ingestion repo ngoài chịu. Repo này chỉ `/readyz` 503 → có method detect. | Breaking |
-| 4 | `[Timing]` API chậm lần đầu (model download + load) | Healthcheck `start_period=60s` trong compose. | Performance |
-| 5 | `RERANK_PROVIDER=bge` tốn thêm ~2GB RAM + ~200ms/request | Default `none`. Bật chỉ khi cần precision cao. | Performance |
+| 2 | Remote server (Colab ngrok) down / session hết hạn | Restart notebook `rag_test_bge_m3_reranker_ngrok.ipynb`, lấy URL mới, update `EMBEDDING_BASE_URL`/`RERANK_BASE_URL` + restart API. Colab free session chết sau vài giờ — dùng server GPU riêng cho production. | Medium |
+| 3 | Qdrant collection mới cần recreate khi dense size đổi | Ingestion repo ngoài chịu. Repo này chỉ `/readyz` 503 → có method detect. | Breaking |
+| 4 | `[Timing]` API chậm lần đầu (remote server đang load model 2.2GB) | Khác local — image Docker không tải model. Đợi remote server warm. Healthcheck `start_period=60s` trong compose. | Performance |
+| 5 | `RERANK_PROVIDER=remote` thêm latency mạng tới remote server / request | Default `none`. Bật chỉ khi cần precision cao; tăng `RERANK_TIMEOUT`. | Performance |
 | 6 | Frontend cũ (v6) gọi `/embeddings/documents` → 404 | Frontend v7 phải dùng repo frontend ngoài (đã tách). | Migration |
 | 7 | `tests/test_embedding_and_reranker_requests.py` (Cohere VCR) đã xoá | Cohere reranker đã bỏ ở v7. | Cleanup |
 

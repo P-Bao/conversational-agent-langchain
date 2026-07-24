@@ -1,10 +1,13 @@
-# Đánh Giá — Evaluation Guide (v7.0.0)
+# Đánh Giá — Evaluation Guide (v7.1.0)
 
-> Lưu ý v7: `tests/test_rag_deepeval_qwen.py` chạy qua **TestClient.post("/rag/", ...)**
-> thay vì gọi `Graph().invoke(...)` trực tiếp. Lý do:
+> Lưu ý v7.1: `tests/test_rag_deepeval_qwen.py` gọi **API Docker container đang chạy
+> thật** qua HTTP (`httpx` tới `RAG_API_URL` mặc định `http://localhost:8001`), thay
+> vì dùng in-process `TestClient`. Lý do:
+> - Tránh tự ý lấy endpoint mặc định / mock embedding — test chỉ pass khi service thật
+>   (Docker + Colab notebook embedding + Qdrant có data) thực sự hoạt động.
 > - Đồng nhất với cách caller thực sự dùng API (qua HTTP).
-> - Giảm số mock cần thiết — chỉ mock `graph.with_config(...)().ainvoke`.
-> - Dễ test edge cases (404, schema thay đổi).
+> - Cuối test assert tỷ lệ pass `≥ TEST_MIN_PASS_RATIO` (default 0.7) — không còn
+>   "PASSED" giả khi 0/14 câu hỏi fail.
 
 ## 1. Tổng Quan
 
@@ -65,11 +68,27 @@ uv run python tests/locate_expected_chunks.py
 
 ## 4. Run Evaluation
 
+> **Yêu cầu v7.1**: Test gọi `POST /rag/` qua TestClient, route này lại gọi remote
+> BGE-m3 embedding (và optional remote reranker). Trước khi chạy eval, **phải**:
+> 1. Chạy Colab notebook `rag_test_bge_m3_reranker_ngrok.ipynb` (T4 GPU) và lấy
+>    ngrok public URL.
+> 2. Set `EMBEDDING_BASE_URL` (và `RERANK_BASE_URL` nếu `RERANK_PROVIDER=remote`)
+>    tới URL đó. Nếu không, mọi câu hỏi sẽ fail ở bước embedding (lenient mode vẫn
+>    pass test nhưng không có retrieval thật).
+> 3. Qdrant collection (`TEST_QDRANT_COLLECTION_NAME`, default `documents`) phải
+>    đã được dựng bởi hệ thống ingestion ngoài và có data (`/readyz` trả 200).
+
 ### Với Qwen self-host:
 
 ```bash
-# Set env
-export ALLOW_NETWORK_TESTS=1
+# Set env (PowerShell)
+$env:ALLOW_NETWORK_TESTS="1"
+$env:TEST_EVAL_BACKEND="qwen"            # hoặc để trống + set QWEN_EVAL_BASE_URL
+$env:QWEN_EVAL_BASE_URL="http://localhost:8000/v1"
+$env:QWEN_EVAL_MODEL="qwen"
+$env:EMBEDDING_BASE_URL="https://xxxx.ngrok-free.app"   # Colab notebook URL
+$env:RERANK_BASE_URL="https://xxxx.ngrok-free.app"      # nếu RERANK_PROVIDER=remote
+$env:RERANK_PROVIDER="none"                              # hoặc "remote"
 
 # Run full eval
 uv run pytest tests/test_rag_deepeval_qwen.py -m qwen -vv
@@ -81,15 +100,19 @@ uv run pytest tests/test_rag_deepeval_qwen.py -m qwen -vv
 ### Với NVIDIA NIM:
 
 ```bash
-# Set NVIDIA API key (ưu tiên hơn Qwen)
-export NVIDIA_API_KEY=nvapi-your-key
-export ALLOW_NETWORK_TESTS=1
+# Set NVIDIA API key (ưu tiên hơn Qwen nếu cùng set)
+$env:ALLOW_NETWORK_TESTS="1"
+$env:TEST_EVAL_BACKEND="nvidia"          # hoặc set NVIDIA_API_KEY để auto-detect
+$env:NVIDIA_API_KEY="nvapi-your-key"
+$env:NVIDIA_EVAL_MODEL="meta/llama-3.3-70b-instruct"
+$env:EMBEDDING_BASE_URL="https://xxxx.ngrok-free.app"   # Colab notebook URL
 
 uv run pytest tests/test_rag_deepeval_qwen.py -m qwen -vv
 ```
 
-Auto-detection: Nếu `NVIDIA_API_KEY` hoặc `NVIDIA_EVAL_API_KEY` set → dùng
-`NvidiaEvalLLM`; ngược lại → dùng `QwenEvalLLM`.
+Auto-detection: nếu `TEST_EVAL_BACKEND` set → dùng trực tiếp; ngược lại nếu
+`NVIDIA_API_KEY` hoặc `NVIDIA_EVAL_API_KEY` set → `NvidiaEvalLLM`; nếu
+`QWEN_EVAL_BASE_URL` set → `QwenEvalLLM`; còn lại → default `QwenEvalLLM`.
 
 ### Eval LLM Config:
 
@@ -105,6 +128,17 @@ QWEN_EVAL_BASE_URL=http://localhost:8000/v1
 QWEN_EVAL_API_KEY=
 QWEN_EVAL_MODEL=qwen
 ```
+
+### Tuning env (optional):
+
+| Env | Default | Mô tả |
+|---|---|---|
+| `RAG_API_URL` | `http://localhost:8001` | Base URL API Docker container (test gọi `POST {RAG_API_URL}/rag/`) |
+| `TEST_QDRANT_COLLECTION_NAME` | `documents` | Collection Qdrant để eval |
+| `TEST_LOCATOR_STRICT` | `0` | `1` = fail test khi locator/context mismatch (mặc định lenient) |
+| `TEST_SKIP_DEEPEVAL` | `0` | `1` = bỏ qua metrics DeepEval, chỉ kiểm tra retrieval/locator (nhanh) |
+| `TEST_DEEPEVAL_TOP_K` | `5` | Số top-K context đưa vào `LLMTestCase.retrieval_context` |
+| `TEST_MIN_PASS_RATIO` | `0.7` | Tỷ lệ câu hỏi tối thiểu phải pass để test assert pass (0.0-1.0) |
 
 ## 5. Interpret Results
 

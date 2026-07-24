@@ -69,27 +69,23 @@ services:
     environment:
       - QDRANT_URL=${QDRANT_URL:-http://qdrant}
       - QDRANT_PORT=${QDRANT_PORT:-6333}
-    volumes:
-      - hf_cache:/root/.cache/huggingface
     # Healthcheck dung /healthz (liveness) — process song la OK
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/healthz"]
+      test: ["CMD-SHELL", "uv run python -c \"import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://localhost:8001/healthz',timeout=5).status==200 else 1)\""]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s   # cho model download lan dau
+      start_period: 60s   # thao window khoi dong (khong phai model download)
     networks:
       - test_network
 
 networks:
   test_network:
     external: true
-    name: test_network
-
-volumes:
-  hf_cache:
-    name: bge_hf_cache
 ```
+
+> Không còn `hf_cache` volume (model chạy remote, Docker image không tải model)
+> và không còn `extra_hosts` block. Network `test_network` vẫn external.
 
 ### `.env` (cần khớp):
 
@@ -97,7 +93,10 @@ volumes:
 QDRANT_URL=http://qdrant    # DNS name trên network, KHONG phai localhost
 QDRANT_PORT=6333
 QDRANT_COLLECTION_NAME=documents  # collection da ton tai tren Qdrant
-RERANK_PROVIDER=none              # default — không load reranker
+EMBEDDING_PROVIDER=remote
+EMBEDDING_BASE_URL=https://xxxx.ngrok-free.app   # remote BGE-m3 server
+RERANK_PROVIDER=none                              # default — passthrough
+RERANK_BASE_URL=https://xxxx.ngrok-free.app       # chỉ dùng khi RERANK_PROVIDER=remote
 ```
 
 ## 6. Multi-Stack Workflow
@@ -151,10 +150,11 @@ docker compose down
 
 | Area | Khuyến nghị |
 |---|---|
-| GPU | Nếu có GPU NVIDIA, mount vào container (`deploy.resources.reservations.devices`). FP16 inference nhanh 3-5x. |
-| Memory | Model BGE-m3 ~4GB RAM (CPU). Nếu `RERANK_PROVIDER=bge` thêm ~2GB. Memory limit recommend >= 6GB. |
-| CPU | Embedding server CPU-bound. Nếu load cao, scale bằng nhiều container + Qdrant cluster. |
-| Volume | HF cache volume (`bge_hf_cache`) giữa các lần restart, tránh re-download model (2.2GB/lần). |
+| GPU | API container không cần GPU (embedding/rerank remote). Colab T4 / server GPU riêng giữ model. |
+| Memory | API container ~512MB-1GB RAM (không load model). Remote server giữ BGE-m3 ~2.7GB + reranker ~2.2GB. |
+| CPU | API container I/O bound (HTTP tới remote + Qdrant). Nếu load cao, scale bằng nhiều container + Qdrant cluster. |
+| Volume | Không còn HF cache volume. Model files nằm trên remote server, không trong API container. |
+| Remote server uptime | Colab ngrok URL hết hạn khi notebook stop. Nếu production, self-host GPU server có fixed URL thay vì Colab. |
 | Healthcheck | `/healthz` cho liveness (process sống); `/readyz` cho readiness (Qdrant OK + collection tồn tại). |
 | Log rotation | Default driver json-file. Set `logging.driver=json-file` + `max-size=10m` nếu muốn. |
 | Network security | Qdrant port 6333 không expose ra ngoài nếu không cần. API port 8001 sau reverse proxy. |
@@ -170,7 +170,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s   # cho model download lan dau (~2.2GB)
+      start_period: 60s   # thao window khoi dong (khong phai model download)
 ```
 
 Hoặc dùng readiness probe riêng cho Kubernetes:
@@ -196,7 +196,13 @@ docker compose build --no-cache
 docker compose up -d
 ```
 
-Storage volume `hf_cache` giữ model files giữa các build → không phải re-download.
+Không còn HF cache volume cần xoá — model chạy remote, image không giữ state.
+
+Nếu build fail (layer cache hỏng / disk đầy), dọn sạch Docker:
+
+```bash
+make docker-clean   # docker compose down -v && docker system prune -a --volumes -f
+```
 
 ## 10. Verify Deployment
 

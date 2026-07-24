@@ -28,11 +28,12 @@
 Các bước ingestion (chunk → embed → upsert Qdrant) hiện được thực hiện bởi:
 
 - **Một repo ingestion riêng** (ví dụ: repo có tên `qdrant-ingestion-pipeline`) —
-  đọc Mongo dump / API upload, embed bằng BGE-m3, upsert vào Qdrant.
+  đọc Mongo dump / API upload, embed bằng BGE-m3 (chạy server HTTP riêng hoặc
+  trong pipeline ingestion), upsert vào Qdrant.
 - **Qdrant Dashboard / REST API** — nếu chỉ cần thao tác thủ công trên dev.
 
 Liên hệ team ingestion để biết:
-- Collection name & schema (named vectors: dense + `bge-m3-sparse`).
+- Collection name & schema (dense vector size 1024 — repo này dense-only).
 - Chunking strategy (Markdown-aware 1500/100 hay simple 750/200).
 - Checkpoint / resume format.
 - Pipeline khởi chạy & monitoring.
@@ -43,8 +44,7 @@ Liên hệ team ingestion để biết:
 
 | Field | Requirement |
 |---|---|
-| `vectors_config` | dense vector size = `EMBEDDING_SIZE` (mặc định 1024), distance = `COSINE` |
-| `sparse_vectors_config.bge-m3-sparse` | SparseVectorParams với `on_disk=false` (in-memory index) |
+| `vectors_config` | Dense vector size 1024 (BGE-m3), distance = `COSINE`. Không dùng sparse named vector — repo này dense-only. |
 | `payload` | tối thiểu `source` (string), `page` (int) — repo này đọc qua `metadata.source`, `metadata.page` |
 
 > Nếu collection không tồn tại, `/readyz` sẽ trả `503` với `reason: collection_missing`.
