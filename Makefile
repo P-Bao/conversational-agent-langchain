@@ -11,7 +11,7 @@ SHELL = /bin/bash
 
 # Mark all command names as phony so make does not confuse them with files of
 # the same name in the repository.
-.PHONY: help style restart clean start_backend start_vectordb setup start_docker down test test-vcr update-vcr-tests test-e2e
+.PHONY: help style restart clean docker-clean start_backend start_vectordb setup start_docker down test test-vcr update-vcr-tests test-e2e
 
 # Print a quick reference for the most common developer commands.
 help:
@@ -25,6 +25,7 @@ help:
 	@echo "  make start_backend  - Start the FastAPI backend"
 	@echo "  make start_docker   - Start all docker containers"
 	@echo "  make clean          - Remove build artifacts"
+	@echo "  make docker-clean   - Docker system prune (dọn image/volume khi build fail)"
 
 # Install backend dependencies and git hooks.
 setup:
@@ -74,6 +75,12 @@ restart:
 # Stop Docker services and remove compose-managed orphan containers.
 down:
 	docker compose down --remove-orphans
+
+# Dọn toàn bộ Docker image/volume/network khi build fail hoặc muốn khởi động lại sạch.
+# Cảnh báo: xoá cả image/volume của project khác — chỉ chạy khi chắc chắn.
+docker-clean:
+	docker compose down --remove-orphans -v
+	docker system prune -a --volumes -f
 
 # Remove local caches, Python bytecode, coverage output, and macOS metadata.
 clean:

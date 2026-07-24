@@ -9,15 +9,8 @@ services:
       - "8001:8001"
     env_file:
       - .env
-    environment:
-      - QDRANT_URL=${QDRANT_URL:-http://qdrant}
-      - QDRANT_PORT=${QDRANT_PORT:-6333}
-    volumes:
-      - hf_cache:/root/.cache/huggingface
     networks:
       - test_network
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     healthcheck:
       test:
         - CMD-SHELL
@@ -27,11 +20,6 @@ services:
       retries: 3
       start_period: 60s
 
-volumes:
-  hf_cache:
-    name: bge_hf_cache
-
 networks:
   test_network:
     external: true
-
