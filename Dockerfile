@@ -9,18 +9,20 @@ ENV UV_LINK_MODE=copy
 # Set PYTHONPATH so agent module is importable
 ENV PYTHONPATH=/src
 
-# Copy python installation files
-COPY ./pyproject.toml ./pyproject.toml
-COPY ./README.md ./README.md
-COPY ./uv.lock ./uv.lock
+# Copy python installation files and dependencies
+COPY ./pyproject.toml ./README.md ./uv.lock .
 
-# Install python dependencies (no CUDA/torch wheels — embedding is remote)
+# Install python dependencies (CPU-only torch + FlagEmbedding via uv pip)
 RUN uv sync --frozen --no-install-project
+
+# Install torch (CPU) and FlagEmbedding before final sync to avoid wheel rebuilds
+RUN uv pip install torch --index-url https://download.pytorch.org/whl/cpu --no-deps
+RUN uv pip install FlagEmbedding
 
 # Copy source code
 COPY ./src /src
 
-# Sync project
+# Final sync
 RUN uv sync --frozen
 
 EXPOSE 8001

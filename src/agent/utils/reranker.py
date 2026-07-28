@@ -1,12 +1,11 @@
-"""Optional remote reranker utilities (BGE-reranker-v2-m3 qua HTTP).
+"""Optional reranker utilities (BGE-reranker-v2-m3).
 
-Không chạy local reranker (tránh tải model về cache Docker). Rerank được delegate
-tới HTTP endpoint ngoài (cùng Colab server với embedding) qua biến ``RERANK_BASE_URL``.
+Supports two modes:
+- ``bge`` (default): run locally via ``FlagEmbedding.FlagReranker``.
+- ``remote``: delegate to HTTP endpoint (legacy Colab ngrok server).
+- ``none``: passthrough (truncate to top_k).
 
-Endpoint contract (xem notebook ``rag_test_bge_m3_reranker_ngrok.ipynb``):
-    POST {base_url}/rerank
-        body: {"query": str, "documents": [...], "top_k": int|null, "normalize": true}
-        resp: {"results": [{"index": int, "document": str, "score": float}, ...]}
+Local BGE reranker loads model on first use and caches it in memory.
 """
 
 from __future__ import annotations
@@ -15,7 +14,8 @@ import os
 from collections.abc import Callable
 from typing import Any, Literal
 
-import httpx
+import torch
+from FlagEmbedding import FlagReranker
 from langchain_core.documents import Document
 from loguru import logger
 
@@ -23,8 +23,45 @@ from agent.utils.config import Config
 
 _REMOTE_TIMEOUT = float(os.getenv("RERANK_TIMEOUT", "60"))
 
-RerankerProvider = Literal["none", "remote"]
+RerankerProvider = Literal["none", "remote", "bge"]
 RerankerFn = Callable[[list[Document], str], list[Document]]
+
+_reranker_cache: FlagReranker | None = None
+
+
+def _get_local_reranker(model_name: str) -> FlagReranker:
+    """Get or create cached FlagReranker instance."""
+    global _reranker_cache
+    if _reranker_cache is None:
+        use_fp16 = torch.cuda.is_available()
+        logger.info(f"Loading local BGE reranker: {model_name} (fp16={use_fp16})")
+        _reranker_cache = FlagReranker(model_name, use_fp16=use_fp16)
+    return _reranker_cache
+
+
+def rerank_with_bge(
+    documents: list[Document],
+    query: str,
+    *,
+    top_k: int,
+    model_name: str = "BAAI/bge-reranker-v2-m3",
+) -> list[Document]:
+    """Rerank documents using local BGE-reranker-v2-m3 via FlagEmbedding."""
+    if not documents:
+        return documents
+    if top_k <= 0 or len(documents) <= top_k:
+        top_k = len(documents)
+
+    reranker = _get_local_reranker(model_name)
+    pairs = [[query, d.page_content] for d in documents]
+    scores = reranker.compute_score(pairs, normalize=True)
+    if isinstance(scores, float):
+        scores = [scores]
+
+    order = sorted(range(len(documents)), key=lambda i: scores[i], reverse=True)[:top_k]
+    ranked = [documents[i] for i in order]
+    logger.info(f"Local reranked {len(documents)} documents to top {len(ranked)}")
+    return ranked
 
 
 def rerank_with_remote(
@@ -35,11 +72,13 @@ def rerank_with_remote(
     base_url: str,
     timeout: float = _REMOTE_TIMEOUT,
 ) -> list[Document]:
-    """Rerank documents bằng remote /rerank endpoint (BGE-reranker-v2-m3)."""
+    """Rerank documents by remote /rerank endpoint (legacy Colab ngrok server)."""
     if not documents:
         return documents
     if top_k <= 0 or len(documents) <= top_k:
         top_k = len(documents)
+
+    import httpx
 
     url = f"{base_url.rstrip('/')}/rerank"
     payload: dict[str, Any] = {
@@ -64,29 +103,36 @@ def get_reranker(
     *,
     top_k: int | None = None,
 ) -> RerankerFn:
-    """Return a reranking callable cho provider trong cfg.
+    """Return a reranking callable for the provider in cfg.
 
     Providers:
-    - ``none``: passthrough (truncate top_k).
-    - ``remote``: HTTP tới ``RERANK_BASE_URL`` (Colab ngrok server).
+    - ``bge`` (default): local FlagEmbedding.FlagReranker (BAAI/bge-reranker-v2-m3).
+    - ``remote``: HTTP to ``RERANK_BASE_URL`` (legacy Colab ngrok).
+    - ``none``: passthrough (truncate to top_k).
     """
     normalized = (cfg.rerank_provider or "none").strip().lower()
     k = top_k if top_k is not None else cfg.rerank_top_k
+    model_name = cfg.rerank_model
+
+    if normalized == "bge":
+        def local_rerank(docs: list[Document], query: str) -> list[Document]:
+            return rerank_with_bge(docs, query, top_k=k, model_name=model_name)
+        return local_rerank
+
+    if normalized == "remote":
+        base_url = cfg.rerank_base_url
+        if not base_url:
+            msg = "RERANK_BASE_URL is required when RERANK_PROVIDER=remote."
+            raise ValueError(msg)
+
+        def remote_rerank(docs: list[Document], query: str) -> list[Document]:
+            return rerank_with_remote(docs, query, top_k=k, base_url=base_url)
+        return remote_rerank
 
     if normalized == "none":
         def passthrough(docs: list[Document], _query: str) -> list[Document]:
             return docs[:k]
         return passthrough
 
-    if normalized == "remote":
-        if not cfg.rerank_base_url:
-            msg = "RERANK_BASE_URL is required when RERANK_PROVIDER=remote."
-            raise ValueError(msg)
-        base_url = cfg.rerank_base_url
-
-        def remote_rerank(docs: list[Document], query: str) -> list[Document]:
-            return rerank_with_remote(docs, query, top_k=k, base_url=base_url)
-        return remote_rerank
-
-    msg = f"Unknown reranker provider: {cfg.rerank_provider!r}. Supported: 'none', 'remote'."
+    msg = f"Unknown reranker provider: {cfg.rerank_provider!r}. Supported: 'none', 'remote', 'bge'."
     raise ValueError(msg)
