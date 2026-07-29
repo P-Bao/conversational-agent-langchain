@@ -12,7 +12,7 @@ ENV UV_LINK_MODE=copy
 ENV PYTHONPATH=/src
 
 # Copy python installation files and config files
-COPY ./pyproject.toml ./README.md ./uv.lock .
+COPY ./pyproject.toml ./README.md ./uv.lock ./
 
 # Install python dependencies (CPU-only torch + FlagEmbedding via uv pip)
 RUN uv sync --frozen --no-install-project
@@ -22,11 +22,11 @@ RUN uv pip install torch --index-url https://download.pytorch.org/whl/cpu --no-d
 RUN uv pip install FlagEmbedding
 
 # Copy source code
-COPY ./src /src
+COPY ./src ./src
 
 # Final sync — --inexact keeps manually installed packages (torch, FlagEmbedding)
 RUN uv sync --frozen --inexact
 
-EXPOSE 8001
+EXPOSE 8005
 
-CMD ["uv", "run", "uvicorn", "agent.api:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uv", "run", "uvicorn", "agent.api:app", "--host", "0.0.0.0", "--port", "8005"]
