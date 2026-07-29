@@ -5,10 +5,9 @@ services:
       dockerfile: Dockerfile
     container_name: conversational-rag-api
     restart: unless-stopped
-    runtime: nvidia  # enable NVIDIA runtime for GPU
     deploy:
       resources:
-        limits:
+        reservations:
           devices:
             - driver: nvidia
               capabilities: [gpu]

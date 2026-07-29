@@ -1,5 +1,7 @@
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
+WORKDIR /app
+
 # Enable bytecode compilation (faster startup)
 ENV UV_COMPILE_BYTECODE=1
 
@@ -9,7 +11,7 @@ ENV UV_LINK_MODE=copy
 # Set PYTHONPATH so agent module is importable
 ENV PYTHONPATH=/src
 
-# Copy python installation files and dependencies
+# Copy python installation files and config files
 COPY ./pyproject.toml ./README.md ./uv.lock .
 
 # Install python dependencies (CPU-only torch + FlagEmbedding via uv pip)
@@ -22,8 +24,8 @@ RUN uv pip install FlagEmbedding
 # Copy source code
 COPY ./src /src
 
-# Final sync
-RUN uv sync --frozen
+# Final sync — --inexact keeps manually installed packages (torch, FlagEmbedding)
+RUN uv sync --frozen --inexact
 
 EXPOSE 8001
 

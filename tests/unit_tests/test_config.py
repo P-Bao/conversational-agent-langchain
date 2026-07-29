@@ -13,9 +13,15 @@ def test_field_defaults_embedding() -> None:
     assert d["embedding_base_url"] == ""
 
 
-def test_field_defaults_rerank_provider_is_none() -> None:
+def test_field_defaults_embedding_api_key() -> None:
+    assert Config.model_fields["embedding_api_key"].default is None
+
+
+def test_field_defaults_rerank() -> None:
     d = _defaults(Config)
-    assert d["rerank_provider"] == "none"
+    assert d["rerank_provider"] == "bge"
+    assert d["rerank_model"] == "BAAI/bge-reranker-v2-m3"
+    assert d["rerank_top_k"] == 5
 
 
 def test_field_defaults_qdrant() -> None:
@@ -34,12 +40,12 @@ def test_field_defaults_retrieval_k() -> None:
 
 def test_overrides() -> None:
     cfg = Config(
-        rerank_provider="remote",
-        rerank_base_url="https://example.ngrok-free.app",
+        rerank_provider="bge",
         rerank_top_k=7,
         embedding_base_url="https://embed.ngrok-free.app",
+        embedding_api_key="secret-key",
     )
     assert cfg.rerank_top_k == 7
-    assert cfg.rerank_provider == "remote"
-    assert cfg.rerank_base_url == "https://example.ngrok-free.app"
+    assert cfg.rerank_provider == "bge"
     assert cfg.embedding_base_url == "https://embed.ngrok-free.app"
+    assert cfg.embedding_api_key == "secret-key"

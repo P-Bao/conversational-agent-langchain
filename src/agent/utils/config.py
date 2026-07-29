@@ -20,6 +20,10 @@ class Config(BaseSettings):
         default="",
         validation_alias=AliasChoices("embedding_base_url", "EMBEDDING_BASE_URL", "AU_EMBED_BASE_URL"),
     )
+    embedding_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("embedding_api_key", "EMBEDDING_API_KEY", "AU_EMBED_API_KEY"),
+    )
 
     # === Qdrant Collection ===
     qdrant_collection_name: str = Field(

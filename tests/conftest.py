@@ -55,11 +55,11 @@ def test_env_defaults() -> None:
         pass
 
     os.environ["EMBEDDING_PROVIDER"] = "remote"
-    # Base URL embedding/reranker lấy từ .env (Colab ngrok / server Docker thật).
-    # Override qua shell env nếu cần (CI). Không hardcode default.
+    # Base URL embedding lấy từ .env (server Docker thật). Override qua shell env
+    # nếu cần (CI). Không hardcode default.
     os.environ.setdefault("EMBEDDING_BASE_URL", "")
+    os.environ.setdefault("EMBEDDING_API_KEY", "")
     os.environ["RERANK_PROVIDER"] = "none"
-    os.environ.setdefault("RERANK_BASE_URL", "")
     os.environ["QDRANT_URL"] = os.environ.get("TEST_QDRANT_URL") or "http://localhost"
     os.environ["QDRANT_PORT"] = os.environ.get("TEST_QDRANT_PORT") or "6333"
     os.environ["QDRANT_COLLECTION_NAME"] = os.environ.get("TEST_QDRANT_COLLECTION_NAME") or "documents"

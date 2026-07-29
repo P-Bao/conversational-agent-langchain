@@ -29,13 +29,25 @@ _REMOTE_TIMEOUT = float(os.getenv("EMBEDDING_TIMEOUT", "60"))
 class BGEM3RemoteEmbeddings(Embeddings):
     """LangChain ``Embeddings`` wrapper gọi remote BGE-m3 endpoint (dense only)."""
 
-    def __init__(self, base_url: str, *, timeout: float = _REMOTE_TIMEOUT) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        api_key: str | None = None,
+        timeout: float = _REMOTE_TIMEOUT,
+    ) -> None:
         self._base_url = base_url.rstrip("/")
+        self._api_key = api_key
         self._timeout = timeout
+
+    def _headers(self) -> dict[str, str]:
+        if self._api_key:
+            return {"Authorization": f"Bearer {self._api_key}"}
+        return {}
 
     def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self._base_url}/embed"
-        with httpx.Client(timeout=self._timeout) as client:
+        with httpx.Client(timeout=self._timeout, headers=self._headers()) as client:
             r = client.post(url, json=payload)
             r.raise_for_status()
             return r.json()
@@ -56,4 +68,4 @@ def get_embedding_model(cfg: Config) -> Embeddings:
         msg = "EMBEDDING_BASE_URL is required (remote provider — không chạy local BGE)."
         raise ValueError(msg)
     logger.info(f"Using remote BGE-m3 embedding endpoint: {cfg.embedding_base_url}")
-    return BGEM3RemoteEmbeddings(cfg.embedding_base_url)
+    return BGEM3RemoteEmbeddings(cfg.embedding_base_url, api_key=cfg.embedding_api_key)

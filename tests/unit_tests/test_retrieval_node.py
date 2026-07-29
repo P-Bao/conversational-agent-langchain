@@ -61,41 +61,13 @@ def test_retrieve_documents_skips_rerank_when_provider_none(
 
 @patch("agent.backend.nodes.retrieval.get_reranker")
 @patch("agent.backend.nodes.retrieval.get_retriever")
-def test_retrieve_documents_applies_rerank_when_provider_remote(
-    mock_get_retriever, mock_get_reranker
-) -> None:
-    from agent.backend.nodes.retrieval import retrieve_documents
-    from agent.utils.config import Config
-
-    cfg = Config(rerank_provider="remote", rerank_top_k=2, rerank_base_url="https://x.ngrok.app")
-    mock_get_retriever.return_value = _make_retriever_value(
-        [Document(page_content="a"), Document(page_content="b"), Document(page_content="c")]
-    )
-    rerank_calls: list[tuple[list[Document], str]] = []
-
-    def _fake_rerank(documents: list[Document], query: str) -> list[Document]:
-        rerank_calls.append((documents, query))
-        return documents[: cfg.rerank_top_k]
-
-    mock_get_reranker.return_value = _fake_rerank
-
-    result = retrieve_documents(_make_state("q"), {}, cfg=cfg)
-
-    assert len(rerank_calls) == 1
-    assert rerank_calls[0][1] == "q"
-    assert len(result["documents"]) == 2
-    mock_get_reranker.assert_called_once_with(cfg, top_k=2)
-
-
-@patch("agent.backend.nodes.retrieval.get_reranker")
-@patch("agent.backend.nodes.retrieval.get_retriever")
 def test_retrieve_documents_no_documents_does_not_rerank(
     mock_get_retriever, mock_get_reranker
 ) -> None:
     from agent.backend.nodes.retrieval import retrieve_documents
     from agent.utils.config import Config
 
-    cfg = Config(rerank_provider="remote", rerank_base_url="https://x.ngrok.app")
+    cfg = Config(rerank_provider="bge")
     mock_get_retriever.return_value = _make_retriever_value([])
 
     result = retrieve_documents(_make_state("q"), {}, cfg=cfg)
