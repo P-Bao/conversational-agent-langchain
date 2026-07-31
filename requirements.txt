@@ -1,0 +1,22 @@
+# torch được cài sẵn trong base image (pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime),
+# không pin lại ở đây để tránh ghi đè bản CUDA đã build sẵn trong image.
+
+# Pin versions tương thích với FlagEmbedding 1.4.0 (giữ prepare_for_model API)
+FlagEmbedding==1.4.0
+transformers==4.57.1
+
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+
+# Retrieval / Vector store
+langchain-core>=1.0
+langchain-qdrant>=1.1.0
+qdrant-client>=1.15.1
+httpx==0.28.1
+langgraph>=1.2.6
+loguru==0.7.3
+openai>=2.43.0
