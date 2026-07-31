@@ -14,7 +14,7 @@ class Config(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # === Dense embedding (remote BGE-m3 via embedding-server) ===
+    # === Dense + Sparse embedding (remote BGE-m3 via embedding-server) ===
     embedding_provider: str = "remote"
     embedding_base_url: str = Field(
         default="",
@@ -24,6 +24,7 @@ class Config(BaseSettings):
         default=None,
         validation_alias=AliasChoices("embedding_api_key", "EMBEDDING_API_KEY", "AU_EMBED_API_KEY"),
     )
+    embedding_return_sparse: bool = True
 
     # === Qdrant Collection ===
     qdrant_collection_name: str = Field(
