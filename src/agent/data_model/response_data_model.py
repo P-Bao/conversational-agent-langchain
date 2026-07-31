@@ -16,8 +16,8 @@ class SearchResponse(BaseModel):
     """The request parameters for explaining the output."""
 
     text: str = Field(..., title="Text", description="The text of the document.")
-    page: int = Field(..., title="Page", description="The page of the document.")
-    source: str = Field(..., title="Source", description="The source of the document.")
+    page: int | None = Field(default=None, title="Page", description="Page number if available.")
+    source: str | None = Field(default=None, title="Source", description="Source document or link.")
 
 
 class EmbeddingResponse(BaseModel):

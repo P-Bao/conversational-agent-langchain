@@ -62,6 +62,7 @@ def _get_cached_vector_store(cfg: Config) -> QdrantVectorStore:
             retrieval_mode=RetrievalMode.HYBRID,
             vector_name="dense",
             sparse_vector_name="sparse",
+            content_payload_key="text",
         )
     return _vector_store_cache[collection_name]
 

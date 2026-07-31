@@ -25,4 +25,4 @@ async def search(search: SearchParams) -> list[SearchResponse] | JSONResponse:
         return JSONResponse(content={"message": "No documents found."})
 
     logger.info(f"Found {len(docs)} documents.")
-    return [SearchResponse(text=d.page_content, page=d.metadata["page"], source=d.metadata["source"]) for d in docs]
+    return [SearchResponse(text=d.page_content, page=d.metadata.get("page"), source=d.metadata.get("source")) for d in docs]
