@@ -3,6 +3,7 @@
 from langchain_core.embeddings import Embeddings
 from langchain_core.retrievers import BaseRetriever
 from langchain_qdrant import QdrantVectorStore, RetrievalMode
+from qdrant_client.http.models import SparseVector
 
 from agent.utils.config import Config, config
 from agent.utils.embeddings import BGEM3RemoteEmbeddings, get_embedding_model
@@ -18,15 +19,15 @@ class BGE_M3SparseEmbeddings(Embeddings):
     def __init__(self, dense_embeddings: BGEM3RemoteEmbeddings) -> None:
         self._dense_embeddings = dense_embeddings
 
-    def embed_documents(self, texts: list[str]) -> list[dict]:
+    def embed_documents(self, texts: list[str]) -> list[SparseVector]:
         # Trigger dense embedding to populate sparse cache
         _ = self._dense_embeddings.embed_documents(texts)
         sparse_vecs = self._dense_embeddings.get_last_sparse_vecs()
         if sparse_vecs is None:
-            return [{"indices": [], "values": []} for _ in texts]
-        return sparse_vecs
+            return [SparseVector(indices=[], values=[]) for _ in texts]
+        return [SparseVector(indices=sv["indices"], values=sv["values"]) for sv in sparse_vecs]
 
-    def embed_query(self, text: str) -> dict:
+    def embed_query(self, text: str) -> SparseVector:
         return self.embed_documents([text])[0]
 
 
