@@ -19,13 +19,13 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 RUN uv venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml README.md ./
 
-RUN uv sync --frozen --no-install-project
+RUN uv sync --no-install-project
 
 COPY ./src ./src
 
-RUN uv sync --frozen
+RUN uv sync
 
 RUN mkdir -p /app/.cache/huggingface
 
