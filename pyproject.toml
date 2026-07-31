@@ -23,7 +23,6 @@ dependencies = [
     # Pin versions to match embedding-server for GPU compatibility & prepare_for_model support
     "FlagEmbedding==1.4.0",
     "transformers==4.57.1",
-    "tokenizers>=0.21,<0.22",
 ]
 [build-system]
 requires = ["uv_build>=0.11.0,<0.12.0"]
