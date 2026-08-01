@@ -40,6 +40,25 @@ class Config(BaseSettings):
     )
     rerank_top_k: int = 5
 
+    # === Query Transformation (Qwen self-host, OpenAI-compatible) ===
+    # Disabled by default -> pipeline behaves exactly like before.
+    query_transform_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("query_transform_enabled", "QUERY_TRANSFORM_ENABLED"),
+    )
+    qwen_base_url: str = Field(
+        default="http://localhost:8000/v1",
+        validation_alias=AliasChoices("qwen_base_url", "QWEN_BASE_URL"),
+    )
+    qwen_api_key: str = Field(
+        default="dummy",
+        validation_alias=AliasChoices("qwen_api_key", "QWEN_API_KEY"),
+    )
+    qwen_model: str = Field(
+        default="qwen",
+        validation_alias=AliasChoices("qwen_model", "QWEN_MODEL"),
+    )
+
     # === Retrieval Configuration ===
     retrieval_k: int = 40
     retrieval_k_retry: int = 100
