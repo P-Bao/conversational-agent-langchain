@@ -1,58 +1,73 @@
-# Cấu Hình (Environment Variables) — v7.0.0
+# Cấu Hình (Environment Variables) — v7.1.0
 
-> Tất cả env vars đều đọc từ `.env` qua `python-dotenv` + Pydantic Settings.
+> Tất cả biến đọc từ `.env` qua Pydantic Settings (`src/agent/utils/config.py`).
 > Mỗi biến có alias để backward-compat. Default an toàn trong code.
 >
-> **Repo v7 chỉ retrieval & search** — biến ingest / chunking / migration đã
-> được loại bỏ. Embedding + rerank delegate tới HTTP endpoint ngoài (Colab ngrok
-> / server GPU riêng). Xem [API_REFERENCE.md](API_REFERENCE.md) §8.
+> **Repo v7.1 chỉ retrieval & search** — tất cả biến ingest / chunking đã
+> bị loại bỏ. Embedding gọi HTTP endpoint ngoài (embedding-server),
+> reranker chạy local qua FlagEmbedding.
 
-## 1. Embedding (Dense — remote BGE-m3)
+## 1. Embedding (Dense + Sparse — remote BGE-m3)
 
 | Biến | Alias | Default | Mô tả |
 |---|---|---|---|
-| `EMBEDDING_PROVIDER` | — | `remote` | Provider: chỉ `remote` ở v7. Local `bge` (FlagEmbedding) đã loại bỏ |
-| `EMBEDDING_BASE_URL` | `AU_EMBED_BASE_URL` | `""` | Base URL của remote BGE-m3 server (Colab ngrok / self-hosted). Server expose `POST /embed` trả `{"dense_vecs": [[float,...],...]}`. **Bắt buộc** khi provider = `remote` |
+| `EMBEDDING_PROVIDER` | — | `remote` | Chỉ `remote` từ v7. Local `bge` (FlagEmbedding) đã loại bỏ |
+| `EMBEDDING_BASE_URL` | `AU_EMBED_BASE_URL` | `""` | Base URL của remote BGE-m3 server. Server expose `POST /embed` trả `{"dense_vecs": [[float,...],...], "sparse_vecs": [{"indices": [...], "values": [...]}, ...]}`. **Bắt buộc** khi provider = `remote` |
+| `EMBEDDING_API_KEY` | `AU_EMBED_API_KEY` | `none` | API key cho remote server (nếu bật auth). Server verify header `Authorization: Bearer <key>` |
+| `EMBEDDING_RETURN_SPARSE` | — | `true` | Trả về cả dense + sparse vectors từ remote server |
 | `EMBEDDING_TIMEOUT` | — | `60` | Timeout (giây) khi gọi remote `/embed` endpoint |
 
-> Sparse embedding đã loại bỏ (remote endpoint không trả sparse). Retrieval
-> dùng dense-only (`RetrievalMode.DENSE`). Không có hybrid search / RRF / DBSF.
+> BGE-m3 trả cả dense (1024-dim) **và** sparse vectors (BM25-like). Repo dùng
+> **hybrid retrieval** (Qdrant `RetrievalMode.HYBRID`) — v7.1 không còn dense-only.
 
 ## 2. Retrieval
 
 | Biến | Default | Mô tả |
 |---|---|---|
-| `RETRIEVAL_K` | `40` | Số document lấy từ dense search (trước rerank) |
-| `RETRIEVAL_K_RETRY` | `100` | Số document lấy khi `retry_count > 0` (retry logic trong graph) |
+| `RETRIEVAL_K` | `40` | Số document lấy từ Qdrant (trước rerank) |
+| `RETRIEVAL_K_RETRY` | `100` | Số document lấy khi `retry_count > 0` |
 
-> Không còn `FUSION_ALGORITHM` / `hybrid_fusion` — fusion không còn dùng (dense-only).
+> Không còn `FUSION_ALGORITHM` / `hybrid_fusion` — fusion không còn dùng.
+> Qdrant tự quản qua `RetrievalMode.HYBRID`.
 
-## 3. Reranker (remote BGE-reranker-v2-m3, optional)
+## 3. Query Transformation (Qwen self-host — rewrite + step-back + decompose)
 
 | Biến | Alias | Default | Mô tả |
 |---|---|---|---|
-| `RERANK_PROVIDER` | — | `none` | **`none` = passthrough (không gọi reranker)**; `remote` = HTTP tới `RERANK_BASE_URL`. Local `bge` (FlagEmbedding) đã loại bỏ |
-| `RERANK_BASE_URL` | `AU_RERANK_BASE_URL` | `""` | Base URL của remote reranker server (cùng Colab server với embed). Server expose `POST /rerank` trả `{"results": [{"index": int, "document": str, "score": float},...]}` |
+| `QUERY_TRANSFORM_ENABLED` | — | `false` | Bật = 1 (`true`) → thêm node `query_transform` trước `retriever` trong LangGraph. Tắt = giữ nguyên pipeline cũ |
+| `QWEN_BASE_URL` | — | `http://localhost:8000/v1` | OpenAI-compatible endpoint của Qwen self-host |
+| `QWEN_API_KEY` | — | `dummy` | API key cho Qwen (self-host thường để `dummy`) |
+| `QWEN_MODEL` | — | `qwen` | Tên model trong Qwen server |
+
+> **Impact:** Khi bật, mỗi query gốc số sinh thêm **3 biến thể** (rewritten,
+> step-back, decompose 2-4 sub-queries) rồi retrieve tuần tự tất cả 5-7 query.
+> Embedding server bị gọi ~5-7 lần thay vì 1 lần. Rerank vẫn dùng câu hỏi gốc.
+
+## 4. Reranker (Local BGE-reranker-v2-m3 via FlagEmbedding)
+
+| Biến | Alias | Default | Mô tả |
+|---|---|---|---|
+| `RERANK_PROVIDER` | — | `bge` | `bge` = local FlagReranker (default); `remote` = legacy HTTP endpoint; `none` = passthrough |
+| `RERANK_MODEL` | `AU_RERANK_MODEL_NAME` | `BAAI/bge-reranker-v2-m3` | Model HuggingFace cho local FlagReranker. Tải lần đầu ~1.1GB vào cache |
 | `RERANK_TOP_K` | — | `5` | Số document giữ lại sau rerank |
-| `RERANK_TIMEOUT` | — | `60` | Timeout (giây) khi gọi remote `/rerank` endpoint |
+| `RERANK_BASE_URL` | `AU_RERANK_BASE_URL` | — | **Legacy only** — chỉ dùng khi `RERANK_PROVIDER=remote` |
+| `RERANK_TIMEOUT` | — | `60` | Timeout (giây) cho remote `/rerank` (legacy) |
 
-> Các provider reranker `cohere` / `flashrank` / `bge` (local) đã bị loại bỏ ở
-> v7 — không có dependency nào cho chúng.
+> Các provider `cohere` / `flashrank` đã bị loại bỏ hoàn toàn.
 
-## 4. Qdrant
+## 5. Qdrant
 
 | Biến | Alias | Default | Mô tả |
 |---|---|---|---|
-| `QDRANT_URL` | — | `http://localhost` | URL Qdrant (⚠️ Trong Docker container, `localhost` trỏ về chính container đó — dùng `http://qdrant` hoặc `http://host.docker.internal`) |
+| `QDRANT_URL` | — | `http://localhost` | URL Qdrant (trong container: `http://qdrant` hoặc `http://host.docker.internal`) |
 | `QDRANT_PORT` | — | `6333` | REST API port |
 | `QDRANT_API_KEY` | `qdrant_cloud_api_key` | `(none)` | API key Qdrant Cloud |
 | `QDRANT_COLLECTION_NAME` | `QDRANT_COLLECTION`, `qdrant_collection` | `documents` | Tên collection dùng cho `/readyz` và default route |
 
-> **Collection do hệ thống ngoài dựng.** Repo này không có endpoint create
-> collection. Phải chắc chắn collection `QDRANT_COLLECTION_NAME` đã tồn tại
-> trên Qdrant trước khi `/readyz` trả về 200.
+> **Collection do hệ thống ingestion, bên ngoài quản lý** — repo này không
+> có endpoint tạo collection.
 
-## 5. DeepEval — NVIDIA NIM (test only)
+## 6. DeepEval — NVIDIA NIM (test only)
 
 | Biến | Default | Mô tả |
 |---|---|---|
@@ -60,61 +75,57 @@
 | `NVIDIA_EVAL_MODEL` | `meta/llama-3.3-70b-instruct` | Model eval trên NVIDIA NIM |
 | `NVIDIA_EVAL_BASE_URL` | `https://integrate.api.nvidia.com/v1` | Endpoint NVIDIA NIM |
 | `NVIDIA_EVAL_RPS` | `30` | Giới hạn requests/sec cho rate limiter |
+| `TEST_EVAL_BACKEND` | `""` | Từ v7.1, chỉ hỗ trợ `nvidia`. Không set → auto-detect NVIDIA |
+| `RAG_API_URL` | `http://localhost:8005` | Base URL API Docker container. **Đôi khi phải là `8005` (port mới)** |
+| `TEST_SKIP_ANSWER_GEN` | `0` | `1` = bỏ qua answering-generation step (dùng top-1 chunk làm actual_output) |
+| `TEST_LOCATOR_STRICT` | `0` | `1` = fail test khi locator/context mismatch |
+| `TEST_SKIP_DEEPEVAL` | `0` | `1` = chỉ kiểm tra retrieval/locator, bỏ qua DeepEval metrics |
+| `TEST_MIN_PASS_RATIO` | `0.7` | Tỷ lệ câu hỏi tối thiểu phải pass để assert |
+| `TEST_DEEPEVAL_TOP_K` | `5` | Số context doc đưa vào `LLMTestCase.retrieval_context` |
 
-## 6. DeepEval — Qwen self-host (test only)
-
-| Biến | Default | Mô tả |
-|---|---|---|
-| `QWEN_EVAL_BASE_URL` | `http://localhost:8000/v1` | Endpoint OpenAI-compatible của Qwen |
-| `QWEN_EVAL_API_KEY` | `""` | API key (nếu cần) |
-| `QWEN_EVAL_MODEL` | `qwen` | Tên model Qwen |
-
-> `QWEN_EVAL_THINKING` đã bỏ ở v7 — `QwenEvalLLM` hardcode `thinking=False`
-> trong request body. Nếu cần bật/tắt runtime, sửa trực tiếp
-> `tests/test_rag_deepeval_qwen.py::QwenEvalLLM.generate`.
+> **QWEN_EVAL_* biến đã bỏ** — eval chỉ dùng NVIDIA NIM (chia sẻ cùng judge).
 
 ## 7. Tổng hợp default `RERANK_PROVIDER` theo use case
 
 | Use case | `RERANK_PROVIDER` | Trade-off |
 |---|---|---|
-| Smoke test nhanh, không cần precision cao | `none` | Passthrough, không gọi remote reranker -> container API nhẹ, ~512MB-1GB RAM |
-| Production cần score chính xác | `remote` | Gọi BGE-reranker-v2-m3 trên Colab/GPU server, tăng precision + ~100ms/request (RTT tới remote) |
+| Production (default) | `bge` | Local FlagReranker — precision tốt nhất, cần GPU (~1.4GB VRAM) |
+| Smoke test nhanh | `none` | Passthrough, không load model — container nhẹ ~512MB-1GB RAM |
+| Legacy remote server | `remote` | HTTP endpoint ngoài — chỉ nếu không có GPU local |
 
-## 8. Migration / Chunking (LOẠI BỎ ở v7)
+## 8. Migration / Chunking (LOẠI BỎ từ v7.0)
 
-Các biến `INPUT_DIR`, `MIGRATE_*`, `CHUNK_*`, `ENABLE_LLM_ENRICH`, `LLM_*`,
-`BACKEND_HOST`, `BACKEND_PORT`, `EVAL_RPM`, `EVAL_TPM`, `REC` đã bị loại bỏ
-trong `template.env`. Migration scripts và ingestion logic thuộc về repo hệ
-thống ngoài quản lý Qdrant.
+Cac biến `INPUT_DIR`, `MIGRATE_*`, `CHUNK_*`, `ENABLE_LLM_ENRICH`, `LLM_*`,
+`BACKEND_HOST`, `BACKEND_PORT`, `EVAL_RPM`, `EVAL_TPM`, `REC` đã bị loại bỏ.
+Migration scripts thuộc hệ thống ingestion bên ngoài quản lý Qdrant.
 
-## 9. Backward-compat Aliases (giữ backward-compat cho `.env` cũ)
-
-`Config` vẫn nhận các alias cũ để tránh break `.env` legacy trong qúa trình
-upgrade:
+## 9. Backward-compat Aliases
 
 | Alias mới | Alias cũ (backward-compat) |
 |---|---|
 | `EMBEDDING_BASE_URL` | `AU_EMBED_BASE_URL` |
-| `RERANK_BASE_URL` | `AU_RERANK_BASE_URL` |
+| `EMBEDDING_API_KEY` | `AU_EMBED_API_KEY` |
 | `QDRANT_COLLECTION_NAME` | `QDRANT_COLLECTION`, `qdrant_collection` |
 | `QDRANT_API_KEY` | `qdrant_cloud_api_key` |
+| `RERANK_BASE_URL` | `AU_RERANK_BASE_URL` (legacy only) |
+| `RERANK_MODEL` | `AU_RERANK_MODEL_NAME` |
 
-> Nếu `.env` của bạn còn chứa `AU_EMBED_BASE_URL`, `AU_RERANK_BASE_URL` → vẫn
-> chạy OK. Nhưng khuyến nghị trim về tên mới để đồng bộ với `template.env`.
+> Nếu `.env` còn chứa `AU_*` → vẫn chạy OK. Nhưng khuyến nghị trim về tên
+> mới để đồng bộ với `template.env`.
 
-Các biến đã bị **xoá hoàn toàn** ở v7 (không còn backward-compat):
-`EMBEDDING_PROVIDER=bge` (local FlagEmbedding), `EMBEDDING_MODEL`,
-`EMBEDDING_SIZE`, `SPARSE_MODEL`, `FUSION_ALGORITHM` / `hybrid_fusion`,
-`RERANK_PROVIDER=bge` (local), `RERANK_MODEL`, `RERANK_API_KEY`,
+Các biến đã **xoá hoàn toàn**:
+`EMBEDDING_PROVIDER=bge`, `EMBEDDING_MODEL`, `EMBEDDING_SIZE`, `SPARSE_MODEL`,
+`FUSION_ALGORITHM` / `hybrid_fusion`, `RERANK_PROVIDER=cohere`,
 `COHERE_API_KEY`, `OPENAI_API_KEY`, `RRF_K`, `DBSF_WINDOW`,
+`QWEN_EVAL_BASE_URL`, `QWEN_EVAL_API_KEY`, `QWEN_EVAL_MODEL`,
 `QWEN_EVAL_THINKING`, `EVAL_RPM`, `EVAL_TPM`, `BACKEND_*`,
-`RECREATE_COLLECTION`, `EMBEDDING_API_KEY`.
+`RECREATE_COLLECTION`.
 
 ## 10. Model Config Reference
 
-| Model | HuggingFace ID | Loại | dim | Chạy ở đâu |
-|---|---|---|---|---|
-| BGE-m3 | `BAAI/bge-m3` | Dense (qua `/embed`) | 1024 | Remote server (Colab ngrok / GPU server) — repo chỉ gọi HTTP |
-| BGE-reranker-v2-m3 | `BAAI/bge-reranker-v2-m3` | Reranker (qua `/rerank`) | — | Remote server (cùng Colab) |
-| Qwen 2.5 (16B) | local serve | Eval LLM (test only) | — | Self-host |
-| Llama 3.3 70B | NVIDIA NIM | Eval LLM (test only) | — | NVIDIA NIM |
+| Model | HuggingFace ID | Loại | Chạy ở đâu |
+|---|---|---|---|
+| BGE-m3 | `BAAI/bge-m3` | Dense 1024-dim + Sparse | Remote server (embedding-server container, port 8008) — chỉ gọi HTTP |
+| BGE-reranker-v2-m3 | `BAAI/bge-reranker-v2-m3` | Cross-attention reranker | **Local** (FlagEmbedding) — model load khi gọi rerank lần đầu |
+| Qwen (self host) | — | Query transformation LLM | Self-host Qwen server (OpenAI-compatible, port 8000) |
+| Llama 3.3 70B | NVIDIA NIM | Eval LLM (test only) | NVIDIA NIM API |

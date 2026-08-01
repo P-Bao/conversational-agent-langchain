@@ -11,7 +11,7 @@ Pyproject markers: `pyproject.toml`
 | `contract` | Endpoint contract tests (no external HTTP) | `tests/vcr/test_contracts.py` |
 | `e2e` | End-to-end tests (cần services thật) | `test_stream.py` |
 | `vcr` | Tests backed by recorded HTTP cassettes | `tests/vcr/test_contracts.py` |
-| `qwen` | DeepEval evaluation suite | `test_rag_deepeval_qwen.py` |
+| `qwen` | DeepEval evaluation suite | `test_rag_deepeval_nim.py` |
 | `slow` | Long-running tests | — |
 
 ## 2. Quick Reference
@@ -64,10 +64,10 @@ RUN_LIVE_E2E=1 uv run pytest -m "e2e" -v tests/
 
 Yêu cầu: Qdrant + API services đang chạy.
 
-### DeepEval (Qwen / NVIDIA):
+### DeepEval (NVIDIA NIM):
 
 ```bash
-ALLOW_NETWORK_TESTS=1 uv run pytest tests/test_rag_deepeval_qwen.py -m qwen -vv
+ALLOW_NETWORK_TESTS=1 uv run pytest tests/test_rag_deepeval_nim.py -m qwen -vv
 ```
 
 Chi tiết xem [EVALUATION.md](EVALUATION.md).
@@ -108,7 +108,7 @@ QDRANT_COLLECTION_NAME=documents
 | `resources_path` | session | Path đến `tests/resources/` |
 | `vcr_config` | module | VCR config (filter headers, record mode) |
 | `golden_questions` | module | Load `tests/golden_questions_v2.json` (DeepEval) |
-| `eval_llm` | module | `NvidiaEvalLLM` hoặc `QwenEvalLLM` (DeepEval) — chọn qua `TEST_EVAL_BACKEND` hoặc auto-detect |
+| `eval_llm` | module | `NvidiaEvalLLM` (DeepEval, single backend) |
 | `rag_api_url` | module | Base URL API Docker thật (default `http://localhost:8001`, override qua `RAG_API_URL`) |
 
 ## 6. Coverage

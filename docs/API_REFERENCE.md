@@ -1,7 +1,7 @@
-# API Reference — Retrieval & Search API v7.0.0
+# API Reference — Retrieval & Search API v7.1.0
 
-> Base URL: `http://localhost:8001`
-> OpenAPI: `http://localhost:8001/docs` (Swagger UI)
+> Base URL: `http://localhost:8005`
+> OpenAPI: `http://localhost:8005/docs` (Swagger UI)
 >
 > Repo chỉ retrieval & search. Collection / embedding / delete thuộc hệ thống
 > ngoài (xem [DATA_INGESTION.md](DATA_INGESTION.md)).
@@ -51,7 +51,7 @@ Kiểm tra Qdrant có sẵn sàng + collection đang khai báo tồn tại.
 ## 4. POST `/rag/` — Retrieval Query
 
 Lấy danh sách document chunks liên quan đến query. Không sinh câu trả lời.
-Pipeline: LangGraph (`retriever` node) -> dense retrieval (remote BGE-m3) -> optional rerank.
+Pipeline: LangGraph (tuỳ chọn `query_transform` -> `retriever` node) -> hybrid retrieval (remote BGE-m3 dense+sparse) -> optional rerank (local BGE-reranker-v2-m3).
 
 **Request Body** (`RAGRequest`):
 
@@ -59,8 +59,7 @@ Pipeline: LangGraph (`retriever` node) -> dense retrieval (remote BGE-m3) -> opt
 {
   "messages": [
     { "role": "user", "content": "Thế nào là attention trong Transformer?" }
-  ],
-  "collection_name": "documents"
+  ]
 }
 ```
 
@@ -88,14 +87,15 @@ Pipeline: LangGraph (`retriever` node) -> dense retrieval (remote BGE-m3) -> opt
 ```
 
 Khi `RERANK_PROVIDER=none` thì `score` có thể `null` (chỉ retrieval thuần).
-Khi `RERANK_PROVIDER=remote` thì `score` là rerank score đã chuẩn hoá về [0, 1].
+Khi `RERANK_PROVIDER=bge` hoặc `remote` thì `score` là rerank score đã chuẩn hoá về [0, 1].
+Khi `QUERY_TRANSFORM_ENABLED=true`, pipeline thêm step rewrite/step-back/decompose trước retrieve — query gốc vẫn là anchor cho rerank.
 
 **Curl example**:
 
 ```bash
-curl -X POST http://localhost:8001/rag/ \
+curl -X POST http://localhost:8005/rag/ \
   -H "Content-Type: application/json" \
-  -d '{"messages": [{"role": "user", "content": "What is attention?"}], "collection_name": "documents"}'
+  -d '{"messages": [{"role": "user", "content": "What is attention?"}]}'
 ```
 
 **Python example**:
@@ -103,9 +103,8 @@ curl -X POST http://localhost:8001/rag/ \
 ```python
 import httpx
 
-resp = httpx.post("http://localhost:8001/rag/", json={
+resp = httpx.post("http://localhost:8005/rag/", json={
     "messages": [{"role": "user", "content": "What is attention?"}],
-    "collection_name": "documents",
 })
 data = resp.json()
 for doc in data["documents"]:
@@ -134,7 +133,7 @@ Stream kết quả retrieval dạng NDJSON. Client đọc từng dòng.
 import httpx, json
 
 async with httpx.AsyncClient() as client:
-    async with client.stream("POST", "http://localhost:8001/rag/stream",
+    async with client.stream("POST", "http://localhost:8005/rag/stream",
         json={"messages": [{"role": "user", "content": "test"}]}) as resp:
         async for line in resp.aiter_lines():
             event = json.loads(line)
@@ -144,7 +143,7 @@ async with httpx.AsyncClient() as client:
 
 ## 6. POST `/semantic/search` — Direct Semantic Search
 
-Tìm kiếm trực tiếp dense search, không qua graph pipeline (không rerank,
+Tìm kiếm trực tiếp hybrid search, không qua graph pipeline (không rerank,
 không graph). Phù hợp khi cần kết quả nhanh.
 
 **Request Body** (`SearchParams`):
@@ -152,8 +151,7 @@ không graph). Phù hợp khi cần kết quả nhanh.
 ```json
 {
   "query": "attention mechanism",
-  "k": 3,
-  "collection_name": "documents"
+  "k": 3
 }
 ```
 
@@ -169,6 +167,8 @@ không graph). Phù hợp khi cần kết quả nhanh.
 ]
 ```
 
+`page` và `source` có thể `null` nếu metadata thiếu.
+
 Khi không có document nào, trả về:
 ```json
 { "message": "No documents found." }
@@ -181,9 +181,9 @@ Khi không có document nào, trả về:
 | GET | `/` | — | plain text | Welcome |
 | GET | `/healthz` | — | `{status: ok}` | Liveness probe |
 | GET | `/readyz` | — | `{status, collection}` hoặc `{status, reason}` | Readiness probe (Qdrant + collection) |
-| POST | `/rag/` | `RAGRequest` | `RetrievalResponse` | Dense retrieval (remote BGE-m3) + optional rerank (LangGraph) |
+| POST | `/rag/` | `RAGRequest` | `RetrievalResponse` | Hybrid retrieval (remote BGE-m3 dense+sparse) + optional rerank (LangGraph) |
 | POST | `/rag/stream` | `RAGRequest` | NDJSON stream | Streaming retrieval |
-| POST | `/semantic/search` | `SearchParams` | `SearchResponse[]` | Direct dense search (no rerank) |
+| POST | `/semantic/search` | `SearchParams` | `SearchResponse[]` | Direct hybrid search (no rerank) |
 
 ## 8. Endpoints Đã Loại Bỏ (v7)
 

@@ -1,4 +1,4 @@
-# Hướng Dẫn Phát Triển — Development Guide (v7.0.0)
+# Hướng Dẫn Phát Triển — Development Guide (v7.1.0)
 
 ## 1. Project Structure
 
@@ -6,54 +6,57 @@
 conversational-agent-langchain/
 ├── src/agent/
 │   ├── __init__.py
-│   ├── api.py                      # FastAPI app entry — only includes /rag, /semantic, /healthz, /readyz
+│   ├── api.py                      # FastAPI app entry — includes /rag, /semantic, /healthz, /readyz
 │   ├── backend/
-│   │   ├── graph.py                # LangGraph StateGraph pipeline (goc giu nguyen)
-│   │   ├── state.py                # AgentState TypedDict
-│   │   └── nodes/retrieval.py      # retrieve_documents node (gọi get_retriever + get_reranker)
+│   │   ├── graph.py                # LangGraph StateGraph — conditional: query_transform? -> retriever -> END
+│   │   ├── state.py                # AgentState TypedDict (query, variants, documents, ...)
+│   │   └── nodes/
+│   │       ├── query_transform.py  # transform_query() (Qwen: rewrite + step-back + decompose)
+│   │       └── retrieval.py        # retrieve_documents() (multi-query + dedupe + rerank)
 │   ├── data_model/
 │   │   ├── request_data_model.py   # SearchParams, ChatMessages, RAGRequest
-│   │   └── response_data_model.py  # SearchResponse, RetrievalResponse, RetrievedDoc, Status
+│   │   └── response_data_model.py  # SearchResponse (page/source optional), RetrievalResponse, RetrievedDoc, Status
 │   ├── routes/
 │   │   ├── rag.py                  # POST /rag/, /rag/stream (LangGraph)
 │   │   ├── search.py               # POST /semantic/search
 │   │   └── health.py               # GET /healthz, /readyz
 │   └── utils/
-│       ├── config.py               # Pydantic Settings (embedding_provider=remote, rerank_provider=none)
-│       ├── embeddings.py           # Remote BGE-m3 dense (HTTP) — BGEM3RemoteEmbeddings
+│       ├── config.py               # Pydantic Settings (embedding remote + rerank bge + qwen query transform)
+│       ├── embeddings.py           # BGEM3RemoteEmbeddings (dense + sparse) — gọi HTTP tới embedding-server
 │       ├── vdb.py                  # Qdrant client (sync + async) — No collection mgmt
-│       ├── retriever.py            # Dense retriever (RetrievalMode.DENSE, no fusion)
-│       └── reranker.py             # get_reranker(cfg, *, top_k) — providers: none / remote
+│       ├── retriever.py            # Hybrid retriever (RetrievalMode.HYBRID, dense + sparse via BGE_M3SparseEmbeddings)
+│       └── reranker.py             # get_reranker: bge (local FlagReranker, default) | remote | none
 ├── tests/
-│   ├── conftest.py
-│   ├── unit_tests/
-│   ├── vcr/
+│   ├── conftest.py                 # Auto-env, ALLOW_NETWORK_TESTS, fixtures
+│   ├── unit_tests/                 # 70+ tests (reranker, retrieval, config, health, query_transform_node)
+│   ├── vcr/                        # Contract tests (recorded HTTP)
 │   ├── e2e_tests/
 │   ├── fakes/
+│   ├── golden_questions_v2.json    # DeepEval dataset (14 câu)
 │   ├── test_integration.py
 │   ├── test_stream.py
-│   └── test_rag_deepeval_qwen.py
-├── ConvAgentBruno/                 # Bruno API test collection (chi giữ RAG + Search)
+│   └── test_rag_deepeval_nim.py    # DeepEval suite — NVIDIA NIM only, 5 metrics
+├── ConvAgentBruno/                 # Bruno API test collection (RAG + Search)
 │   ├── RAG/{Chat,Stream}.bru
 │   └── Search/Search.bru
-├── docs/                           # Tai lieu (ban giao v7.0.0)
+├── docs/                           # Tai lieu (ban giao v7.1.0)
 ├── .env                            # Secrets (gitignored)
-├── template.env                    # Mau env
-├── docker-compose.yml              # API service
-├── Dockerfile
-├── pyproject.toml                  # Dependencies + tool config
-├── Makefile                        # Dev shortcuts
+├── template.env                    # Mau env (v8 — có QUERY_TRANSFORM, QWEN_*)
+├── docker-compose.yml              # API service (port 8005, ami-network, GPU reservation)
+├── Dockerfile                      # PyTorch CUDA base, pip install requirements.txt
+├── requirements.txt               # Pin FlagEmbedding + transformers + langchain-openai
+├── pyproject.toml                  # Project + tool config (pytest, mypy, ty, coverage)
+├── Makefile                        # Dev shortcuts (test, docker-clean)
 └── ruff.toml                       # Linter config
 ```
 
-> **Đã xoá ở v7** (cho cả branch này lẫn đã thuộc hệ ngoài quản lý Qdrant):
-> - `backend/services/`, `scripts/`, `utils/utility.py`, `data_model/internal_model.py`
-> - `routes/{collection,delete,embeddings}.py`
-> - `frontend/` (Streamlit repo đã tách)
-> - `Dockerfile.frontend`
-> - `config/qdrant.yaml` (Qdrant quản lý ngoài repo)
-> - `resources/` (legacy demo PDFs + diagrams)
-> - `ConvAgentBruno/Embeddings/` (endpoints `/embeddings/*` đã bỏ ở v7)
+> **Đã xoá (từ v7.0 → v7.1) hoặc thuộc hệ ngoài quản lý:**
+> - `backend/services/`, `scripts/`, `utils/utility.py`, `data_model/internal_model.py` (ingestion ngoài)
+> - `routes/{collection,delete,embeddings}.py` (CRUD endpoints)
+> - `frontend/`, `Dockerfile.frontend` (Streamlit repo tách riêng)
+> - `config/qdrant.yaml`, `resources/` (Qdrant + fixtures ngoài repo)
+> - `ConvAgentBruno/Embeddings/` (endpoints `/embeddings/*` đã bỏ)
+> - `tests/test_rag_deepeval_qwen.py` → thay bằng `test_rag_deepeval_nim.py` (v7.1)
 
 ## 2. Code Style & Conventions
 

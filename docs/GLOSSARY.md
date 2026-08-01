@@ -1,23 +1,29 @@
-# Thuật Ngữ — Glossary (v7.0.0)
+# Thuật Ngữ — Glossary (v7.1.0)
+
+> **Mới v7.1:** Query Transformation, hybrid retrieval, local reranker, NIM-only DeepEval, port 8005/ami-network.
 
 ## A — M
 
 | Thuật ngữ | Giải thích | Liên quan |
 |---|---|---|
-| **BGE-m3** | Multi-lingual embedding model của BAAI. Repo này **không chạy local** — gọi model qua HTTP endpoint ngoài (`EMBEDDING_BASE_URL`, Colab ngrok / server GPU). Chỉ dùng dense vector 1024-dim (sparse đã bỏ). | [ARCHITECTURE.md](ARCHITECTURE.md), [CONFIGURATION.md](CONFIGURATION.md), `src/agent/utils/embeddings.py` |
-| **BGE Reranker** | Cross-encoder model `BAAI/bge-reranker-v2-m3`. Repo này gọi qua HTTP endpoint ngoài (`RERANK_BASE_URL`) khi `RERANK_PROVIDER=remote`. So sánh query vs từng document pairs → ra relevance score. | [ARCHITECTURE.md](ARCHITECTURE.md), `src/agent/utils/reranker.py` |
-| **Dense Embedding** | Vector số thực (float) biểu diễn ngữ nghĩa của văn bản. BGE-m3 dense dim = 1024. Dùng similarity COSINE. Repo này dense-only (gọi remote endpoint). | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| **FlagEmbedding** | Thư viện chính thức của BAAI cho BGE models. **Không còn là dependency của repo này** từ v7.1 — model chạy trên server HTTP ngoài (Colab notebook `rag_test_bge_m3_reranker_ngrok.ipynb`). | `rag_test_bge_m3_reranker_ngrok.ipynb` (repo ngoài) |
-| **LangGraph** | Framework của LangChain để xây dựng agent pipeline dạng graph. V7 giữ nguyên kiến trúc: 1 node `retriever` → END. | `src/agent/backend/graph.py` |
-| **Liveness probe** | Endpoint `/healthz` chỉ xác nhận process còn sống (luôn trả 200 nếu process chạy). Không gọi dependency. | [DEPLOYMENT.md](DEPLOYMENT.md), [OPERATIONS.md](OPERATIONS.md) |
+| **BGE-m3** | Multi-lingual embedding model BAAI. Repo không chạy local — gọi qua HTTP endpoint `embedding-server` (`EMBEDDING_BASE_URL`). Trả cả dense 1024-dim **và** sparse vectors (BM25-like). Dùng cho hybrid retrieval. | [ARCHITECTURE.md](ARCHITECTURE.md), [CONFIGURATION.md](CONFIGURATION.md), `src/agent/utils/embeddings.py` |
+| **BGE Reranker** | Cross-encoder `BAAI/bge-reranker-v2-m3`. **v7.1 chạy local** qua FlagEmbedding (`RERANK_PROVIDER=bge` default). So sánh query vs từng document pairs → relevance score. Legacy remote `RERANK_PROVIDER=remote` vẫn hỗ trợ. | [ARCHITECTURE.md](ARCHITECTURE.md), `src/agent/utils/reranker.py`, [CONFIGURATION.md](CONFIGURATION.md) |
+| **Dense Embedding** | Vector float 1024-dim biểu diễn ngữ nghĩa. BGE-m3 dense dùng COSINE similarity. | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| **Sparse Embedding** | Vector sparse (indices + values) giống BM25 từ BGE-m3. Qdrant HYBRID search kết hợp dense + sparse. | [ARCHITECTURE.md](ARCHITECTURE.md), `src/agent/utils/retriever.py` |
+| **FlagEmbedding** | Thư viện BAAI cho BGE models. **v7.1 chỉ dùng local reranker** (`BAAI/bge-reranker-v2-m3`) trong API container. Embedding dùng remote server (repo ngoài). | `rag_test_bge_m3_reranker_ngrok.ipynb` (repo ngoài) |
+| **Hybrid Retrieval** | Qdrant `RetrievalMode.HYBRID` — tìm kiếm song song dense + sparse vectors, merge score. Mặc định từ v7.1. | [ARCHITECTURE.md](ARCHITECTURE.md), `src/agent/utils/retriever.py` |
+| **LangGraph** | Framework LangChain xây dựng agent pipeline dạng graph. v7.1: conditional graph `query_transform? -> retriever -> END`. | `src/agent/backend/graph.py` |
+| **Liveness probe** | Endpoint `/healthz` — chỉ xác nhận process sống (luôn 200). | [DEPLOYMENT.md](DEPLOYMENT.md), [OPERATIONS.md](OPERATIONS.md) |
 
 ## N — Z
 
 | Thuật ngữ | Giải thích | Liên quan |
 |---|---|---|
+| **Query Transformation** | Node tùy chọn (bật `QUERY_TRANSFORM_ENABLED=true`) dùng Qwen self-host LLM làm 3 việc: **rewrite** (phân giải câu hỏi), **step-back** (câu hỏi tổng quát hơn), **decompose** (chia 2-4 sub-queries). Chạy song song qua `RunnableParallel`. | [ARCHITECTURE.md](ARCHITECTURE.md), `src/agent/backend/nodes/query_transform.py`, [CONFIGURATION.md](CONFIGURATION.md) |
+| **Readiness probe** | Endpoint `/readyz` — xác nhận Qdrant kết nối OK + collection tồn tại. Trả 200 + ready hoặc 503 + reason. | [DEPLOYMENT.md](DEPLOYMENT.md), [OPERATIONS.md](OPERATIONS.md) |
+| **Reranking** | Bước sau search: dùng cross-encoder (local BGE-reranker-v2-m3) sắp xếp lại top-K theo relevance. **v7.1 default = bge (local)** — không có latency mạng remote. `RERANK_PROVIDER=none` để tắt. | `src/agent/utils/reranker.py`, [CONFIGURATION.md](CONFIGURATION.md) |
+| **DeepEval** | Framework đánh giá RAG quality. **v7.1: NVIDIA NIM only** (không còn Qwen backend). 5 metrics: GEval Correctness, Faithfulness, ContextualRelevancy, ContextualPrecision, ContextualRecall. Dùng `evaluate()` batch. | [EVALUATION.md](EVALUATION.md), `tests/test_rag_deepeval_nim.py` |
+| **Qdrant** | Vector DB hỗ trợ dense + sparse search + filter + payload. v7.1 dùng `RetrievalMode.HYBRID` (dense + sparse). Giao tiếp qua HTTP `:6333`. | [DEPLOYMENT.md](DEPLOYMENT.md), `src/agent/utils/vdb.py` |
 | **Retrieval-Only** | Repo chỉ trả về documents, không sinh answer. Downstream LLM chịu trách nhiệm sinh câu trả lời từ context này. | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| **Readiness probe** | Endpoint `/readyz` xác nhận Qdrant có kết nối + collection tồn tại. Trả 200 + `ready` hoặc 503 + `reason`. | [DEPLOYMENT.md](DEPLOYMENT.md) |
-| **Reranking** | Bước thứ 2 sau search: dùng cross-encoder (remote) để sắp xếp lại top-K documents theo relevance. BGE-reranker-v2-m3 (qua HTTP) cho kết quả chính xác hơn raw search score. Mặc định ở v7 = TẮT (`RERANK_PROVIDER=none`) vì model sống trên server ngoài. | `src/agent/utils/reranker.py`, [CONFIGURATION.md](CONFIGURATION.md) |
-| **DeepEval** | Framework đánh giá quality của retrieval: ContextualPrecision (độ chính xác) và ContextualRecall (độ bao phủ). Dùng LLM (Qwen/NVIDIA) làm judge. Ở v7 chạy qua TestClient (`/rag/`) chứ không gọi Graph() trực tiếp. | [EVALUATION.md](EVALUATION.md), `tests/test_rag_deepeval_qwen.py` |
-| **QDrant** | Vector database hỗ trợ dense vector search + filter + payload. V7 giao tiếp qua HTTP (`:6333`). | [DEPLOYMENT.md](DEPLOYMENT.md) |
-| **External Management System** | Hệ thống quản lý Qdrant riêng biệt — chịu trách nhiệm tạo collection, ingest data, xoá document. Repo này chỉ **đọc** Qdrant. | [DATA_INGESTION.md](DATA_INGESTION.md) |
+| **External Management System** | Hệ thống ingestion quản lý Qdrant riêng biệt — tạo collection, ingest data, xoá document. Repo này chỉ **đọc** Qdrant. | [DATA_INGESTION.md](DATA_INGESTION.md) |
+| **ami-network** | Docker external network chia sẻ giữa Qdrant + embedding-server + API + (optional Qwen). Tạo 1 lần: `docker network create ami-network`. | [SETUP.md](SETUP.md), [DEPLOYMENT.md](DEPLOYMENT.md) |

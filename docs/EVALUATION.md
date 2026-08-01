@@ -1,198 +1,259 @@
 # Đánh Giá — Evaluation Guide (v7.1.0)
 
-> Lưu ý v7.1: `tests/test_rag_deepeval_qwen.py` gọi **API Docker container đang chạy
-> thật** qua HTTP (`httpx` tới `RAG_API_URL` mặc định `http://localhost:8001`), thay
-> vì dùng in-process `TestClient`. Lý do:
-> - Tránh tự ý lấy endpoint mặc định / mock embedding — test chỉ pass khi service thật
->   (Docker + Colab notebook embedding + Qdrant có data) thực sự hoạt động.
-> - Đồng nhất với cách caller thực sự dùng API (qua HTTP).
-> - Cuối test assert tỷ lệ pass `≥ TEST_MIN_PASS_RATIO` (default 0.7) — không còn
->   "PASSED" giả khi 0/14 câu hỏi fail.
+> **Lưu ý v7.1:**
+> - File test đổi từ `test_rag_deepeval_qwen.py` → **`test_rag_deepeval_nim.py`**
+>   (NVIDIA NIM-only, không còn song song Qwen backend).
+> - Số metric tăng từ 2 → **5** (thêm `GEval` Correctness, `Faithfulness`,
+>   `ContextualRelevancy` theo reference notebook `example/evaluation_deep_eval.ipynb`).
+> - Dùng `evaluate()` batch thay vì assert từng câu (theo pattern notebook).
+> - Test gọi **API Docker đang chạy thật** qua HTTP (`httpx` tới `RAG_API_URL`
+>   mặc định `http://localhost:8005`) — không dùng in-process `TestClient`.
+>   Lý do:
+>   - Tránh mock embedding — test chỉ pass khi service thật (Docker +
+>     embedding-server + Qdrant có data) thực sự hoạt động.
+>   - Đồng nhất với cách caller thật dùng API (qua HTTP).
+> - Test tự sinh `actual_output` bằng NIM từ retrieved contexts → mới đo được
+>   Correctness/Faithfulness (vì route `/rag/` chỉ trả documents, không có
+>   generation node).
 
 ## 1. Tổng Quan
 
-Hệ thống dùng **DeepEval** để đánh giá chất lượng retrieval:
-- `ContextualPrecisionMetric`: đo tỷ lệ document relevant trong top-K
-- `ContextualRecallMetric`: đo tỷ lệ expected context được retrieve thành công
+DeepEval đánh giá chất lượng RAG qua **5 metric**, tất cả dùng NVIDIA NIM
+`meta/llama-3.3-70b-instruct` làm judge:
 
-Metric này dùng một **Eval LLM** (judge) — hỗ trợ 2 backend:
-
-| Backend | Env prefix | Rate limit | Chi phí |
+| Metric | đánh giá gì | Threshold | theo notebook? |
 |---|---|---|---|
-| NVIDIA NIM | `NVIDIA_*` | 30 req/s (NVIDIA_EVAL_RPS) | Tính phí theo token |
-| Qwen self-host | `QWEN_*` | Không | Local |
-
-Chọn backend nào tuỳ theo tài nguyên:
-- **Qwen**: cần GPU host model Qwen local, chạy unlimited request.
-- **NVIDIA NIM**: API cloud, có rate limit, tốn phí nhưng không cần GPU local.
+| `GEval` (Correctness) | actual output có fact-correct so với expected output | 0.5 | ✅ |
+| `FaithfulnessMetric` | actual output có bị hallucinate khỏi retrieval context | 0.7 | ✅ |
+| `ContextualRelevancyMetric` | retrieval context có relevant với input query | 0.5 | ✅ |
+| `ContextualPrecisionMetric` | top-K có nhiều relevant docs (sắp xếp đúng) | 0.5 | extra |
+| `ContextualRecallMetric` | có retrieve đủ expected context | 0.5 | extra |
 
 ## 2. Dataset: Golden Questions
 
-File: `tests/golden_questions_v2.json`
-
-Format:
+File: `tests/golden_questions_v2.json` (14 câu hỏi).
 
 ```json
 [
   {
-    "question": "Attention trong Transformer hoạt động thế nào?",
-    "expected_context": ["The attention mechanism allows..."],
-    "expected_chunk_locators": [{"global_id": "550e8400-..."}]
+    "id": 1,
+    "topic": "organization",
+    "question": "Địa chỉ của Hội đồng Học viện là gì?",
+    "expected_context": ["Hội đồng Học viện có địa chỉ tại..."],
+    "expected_chunk_locators": [{"global_id": "..."}]
   }
 ]
 ```
 
 | Field | Mô tả |
 |---|---|
+| `id`, `topic` | Phân loại câu hỏi |
 | `question` | Query test |
-| `expected_context` | Mảng text fragment mong đợi xuất hiện trong retrieved documents |
-| `expected_chunk_locators` | List global_id mong đợi (định danh chính xác) |
+| `expected_context` | List text fragment mong đợi xuất hiện trong retrieved documents. `expected_context[0]` được dùng làm `expected_output` cho Correctness |
+| `expected_chunk_locators` | List `global_id` mong đợi (định danh chính xác chunk) |
 
-Locator được đánh giá qua `assert_chunk_locators()`:
-1. Nếu global_id match → pass
-2. Nếu không, fallback content check (expected_context substring match)
-3. Nếu cả 2 không match → fail
+Locator check (outside DeepEval) qua `assert_chunk_locators()`:
+1. Nếu `global_id` match → pass
+2. Fallback: content substring match với `expected_context`
+3. Không match → fail (lenient mode chỉ warn, strict mode fail test)
 
 ## 3. Locator Step (Sau Migration)
 
-Sau mỗi lần migration dữ liệu (bên ingestion repo ngoài), `global_id` có thể
-thay đổi nếu có thay đổi chunking. Cần chạy script locator để cập nhật
-`expected_chunk_locators`:
+Sau mỗi lần migration (bên ingestion repo ngoài), `global_id` có thể đổi nếu
+chunking thay. Cập nhật `expected_chunk_locators`:
 
 ```bash
 uv run python tests/locate_expected_chunks.py
 ```
 
-> Script làm việc với Qdrant trực tiếp — có thể chạy ở bất kỳ agent nào
-> có Qdrant access. Repo này không đổi `tests/locate_expected_chunks.py`.
+> Script làm việc với Qdrant trực tiếp — có thể chạy ở bất kỳ agent nào có
+> Qdrant access. Repo này không đổi `tests/locate_expected_chunks.py`.
 
 ## 4. Run Evaluation
 
-> **Yêu cầu v7.1**: Test gọi `POST /rag/` qua TestClient, route này lại gọi remote
-> BGE-m3 embedding (và optional remote reranker). Trước khi chạy eval, **phải**:
-> 1. Chạy Colab notebook `rag_test_bge_m3_reranker_ngrok.ipynb` (T4 GPU) và lấy
->    ngrok public URL.
-> 2. Set `EMBEDDING_BASE_URL` (và `RERANK_BASE_URL` nếu `RERANK_PROVIDER=remote`)
->    tới URL đó. Nếu không, mọi câu hỏi sẽ fail ở bước embedding (lenient mode vẫn
->    pass test nhưng không có retrieval thật).
+> **Yêu cầu v7.1**: Trước khi chạy eval, **phải**:
+> 1. Chạy Docker stack: Qdrant + embedding-server (repo ngoài) + API container.
+> 2. Set `EMBEDDING_BASE_URL` trỏ tới embedding-server (`http://bge-m3-embed:8008`
+>    trong Docker network, hoặc `http://localhost:8008` nếu host).
 > 3. Qdrant collection (`TEST_QDRANT_COLLECTION_NAME`, default `documents`) phải
 >    đã được dựng bởi hệ thống ingestion ngoài và có data (`/readyz` trả 200).
+> 4. Set `NVIDIA_API_KEY` (lấy từ https://build.nvidia.com).
 
-### Với Qwen self-host:
+### Lệnh chạy:
 
 ```bash
 # Set env (PowerShell)
 $env:ALLOW_NETWORK_TESTS="1"
-$env:TEST_EVAL_BACKEND="qwen"            # hoặc để trống + set QWEN_EVAL_BASE_URL
-$env:QWEN_EVAL_BASE_URL="http://localhost:8000/v1"
-$env:QWEN_EVAL_MODEL="qwen"
-$env:EMBEDDING_BASE_URL="https://xxxx.ngrok-free.app"   # Colab notebook URL
-$env:RERANK_BASE_URL="https://xxxx.ngrok-free.app"      # nếu RERANK_PROVIDER=remote
-$env:RERANK_PROVIDER="none"                              # hoặc "remote"
+$env:NVIDIA_API_KEY="nvapi-your-key"
+# Tùy chọn: 
+$env:EMBEDDING_BASE_URL="http://bge-m3-embed:8008"
+$env:RAG_API_URL="http://localhost:8005"
+$env:TEST_QDRANT_COLLECTION_NAME="documents"
 
 # Run full eval
-uv run pytest tests/test_rag_deepeval_qwen.py -m qwen -vv
-
-# Output:
-# test_qwen_deepeval_retrieval ... PASSED
+uv run pytest tests/test_rag_deepeval_nim.py -m qwen -vv
 ```
 
-### Với NVIDIA NIM:
+### Bash (Linux/macOS):
 
 ```bash
-# Set NVIDIA API key (ưu tiên hơn Qwen nếu cùng set)
-$env:ALLOW_NETWORK_TESTS="1"
-$env:TEST_EVAL_BACKEND="nvidia"          # hoặc set NVIDIA_API_KEY để auto-detect
-$env:NVIDIA_API_KEY="nvapi-your-key"
-$env:NVIDIA_EVAL_MODEL="meta/llama-3.3-70b-instruct"
-$env:EMBEDDING_BASE_URL="https://xxxx.ngrok-free.app"   # Colab notebook URL
-
-uv run pytest tests/test_rag_deepeval_qwen.py -m qwen -vv
+ALLOW_NETWORK_TESTS=1 NVIDIA_API_KEY=nvapi-xxx \
+  uv run pytest tests/test_rag_deepeval_nim.py -m qwen -vv
 ```
 
-Auto-detection: nếu `TEST_EVAL_BACKEND` set → dùng trực tiếp; ngược lại nếu
-`NVIDIA_API_KEY` hoặc `NVIDIA_EVAL_API_KEY` set → `NvidiaEvalLLM`; nếu
-`QWEN_EVAL_BASE_URL` set → `QwenEvalLLM`; còn lại → default `QwenEvalLLM`.
-
-### Eval LLM Config:
+### Eval LLM Config (.env hoặc shell):
 
 ```env
-# NVIDIA (rate-limited)
+# NVIDIA NIM (judge + answer generator)
 NVIDIA_API_KEY=nvapi-your-key
 NVIDIA_EVAL_MODEL=meta/llama-3.3-70b-instruct
 NVIDIA_EVAL_BASE_URL=https://integrate.api.nvidia.com/v1
 NVIDIA_EVAL_RPS=30
-
-# Qwen (no rate limit)
-QWEN_EVAL_BASE_URL=http://localhost:8000/v1
-QWEN_EVAL_API_KEY=
-QWEN_EVAL_MODEL=qwen
 ```
 
 ### Tuning env (optional):
 
 | Env | Default | Mô tả |
 |---|---|---|
-| `RAG_API_URL` | `http://localhost:8001` | Base URL API Docker container (test gọi `POST {RAG_API_URL}/rag/`) |
+| `RAG_API_URL` | `http://localhost:8005` | Base URL API Docker container |
 | `TEST_QDRANT_COLLECTION_NAME` | `documents` | Collection Qdrant để eval |
 | `TEST_LOCATOR_STRICT` | `0` | `1` = fail test khi locator/context mismatch (mặc định lenient) |
-| `TEST_SKIP_DEEPEVAL` | `0` | `1` = bỏ qua metrics DeepEval, chỉ kiểm tra retrieval/locator (nhanh) |
+| `TEST_SKIP_DEEPEVAL` | `0` | `1` = bỏ qua DeepEval metrics, chỉ check retrieval/locator (nhanh) |
+| `TEST_SKIP_ANSWER_GEN` | `0` | `1` = bỏ NIM answer generation, dùng top-1 chunk làm `actual_output` |
 | `TEST_DEEPEVAL_TOP_K` | `5` | Số top-K context đưa vào `LLMTestCase.retrieval_context` |
 | `TEST_MIN_PASS_RATIO` | `0.7` | Tỷ lệ câu hỏi tối thiểu phải pass để test assert pass (0.0-1.0) |
 
-## 5. Interpret Results
+## 5. DeepEval Workflow
+
+Test thực hiện 2 bước cho mỗi câu hỏi:
+
+### Step 1: Retrieve + Generate Answer
+
+```
+POST {RAG_API_URL}/rag/  body: {"messages": [{"role":"user","content":"<question>"}]}
+  -> retrieved_docs: [{"text","score","metadata"}, ...]
+  -> retrieved_contexts = [d["text"] for d in retrieved_docs][:TEST_DEEPEVAL_TOP_K]
+
+# Generate actual_output (NIM):
+prompt = "You are a helpful assistant. Answer using ONLY the context below..."
+actual_output = NvidiaEvalLLM.generate(prompt_with(context=retrieved_contexts, question=question))
+```
+
+### Step 2: Build Test Case + Run 5 Metrics
+
+```python
+test_cases = create_deep_eval_test_cases(
+    questions=[...],
+    gt_answers=[expected_context[0] for each question],   # expected_output
+    generated_answers=[actual_output for each question],
+    retrieved_documents=[retrieved_contexts for each question],
+)
+
+metrics = [
+    GEval(name="Correctness", model=eval_llm, ...),
+    FaithfulnessMetric(threshold=0.7, model=eval_llm),
+    ContextualRelevancyMetric(threshold=0.5, model=eval_llm),
+    ContextualPrecisionMetric(threshold=0.5, model=eval_llm),
+    ContextualRecallMetric(threshold=0.5, model=eval_llm),
+]
+
+results = evaluate(test_cases=test_cases, metrics=metrics)
+```
+
+### Helper function (theo notebook)
+
+```python
+def create_deep_eval_test_cases(questions, gt_answers, generated_answers, retrieved_documents):
+    """Build list of LLMTestCase from 4 parallel lists."""
+    return [
+        LLMTestCase(
+            input=question,
+            expected_output=gt_answer,
+            actual_output=generated_answer,
+            retrieval_context=retrieved_document,
+        )
+        for question, gt_answer, generated_answer, retrieved_document in zip(
+            questions, gt_answers, generated_answers, retrieved_documents
+        )
+    ]
+```
+
+## 6. Interpret Results
 
 DeepEval output:
 
 ```
-test_qwen_deepeval_retrieval (test_rag_deepeval_qwen.py) ...
+test_nim_deepeval_evaluation (test_rag_deepeval_nim.py) ...
+  ✓ Correctness: 0.85 (threshold=0.5)
+  ✓ Faithfulness: 0.92 (threshold=0.7)
+  ✓ Contextual Relevancy: 0.78 (threshold=0.5)
   ✓ Contextual Precision: 0.85 (threshold=0.5)
   ✓ Contextual Recall: 0.78 (threshold=0.5)
   ✓ Chunk Locators: all expected chunks found
+[done] 12/14 passed all 5 metrics (86%, threshold=70%)
 ```
 
 | Metric | Range | Good | Acceptable | Poor |
 |---|---|---|---|---|
+| Correctness (GEval) | 0-1 | > 0.8 | 0.5-0.8 | < 0.5 |
+| Faithfulness | 0-1 | > 0.8 | 0.7-0.8 | < 0.7 |
+| Contextual Relevancy | 0-1 | > 0.8 | 0.5-0.8 | < 0.5 |
 | Contextual Precision | 0-1 | > 0.8 | 0.5-0.8 | < 0.5 |
 | Contextual Recall | 0-1 | > 0.7 | 0.5-0.7 | < 0.5 |
 
-Nếu fail → kiểm tra:
-- Data có trong collection không? (`curl /readyz` phải 200)
+Cuối test:
+
+```
+[done] N/total passed all 5 metrics (X%, locators Y/total, api_failures=Z, threshold=70%)
+```
+
+Nếu `ratio < min_pass` → `pytest.fail` với hướng dẫn debug.
+
+### Nếu fail → kiểm tra:
+
+- Data trong collection không? (`curl /readyz` phải 200)
 - `RETRIEVAL_K` đủ lớn không?
-- Eval LLM online không? (rate limit, model name)
+- `EMBEDDING_BASE_URL` đúng không? (embedding-server reachable)
+- `RERANK_PROVIDER` đúng? (bge cần GPU)
+- `QUERY_TRANSFORM_ENABLED` quá chậm? (tắt nếu chỉ test retrieval)
+- NVIDIA NIM key/quota còn hạn không? ( nhìn logs `RateLimiter.wait()`)
+- Answer generation fail? → test tự fallback dùng top-1 chunk làm `actual_output`
+- `RAG_API_URL` đúng port? (port mới `8005`)
 
-Xem log DeepEval để debug từng test case.
-
-## 6. Add New Test Cases
+## 7. Add New Test Cases
 
 1. Thêm entry vào `tests/golden_questions_v2.json`:
    - `question`: câu hỏi thật (Vietnamese nếu data gốc tiếng Việt)
    - `expected_context`: trích dẫn chính xác đoạn trong tài liệu gốc
-2. Chạy locator để cập nhật global_id:
+2. Chạy locator để cập nhật `global_id`:
    ```bash
    uv run python tests/locate_expected_chunks.py
    ```
-3. Commit + push cả `golden_questions_v2.json`
+3. Commit + push cả `golden_questions_v2.json` và locator output.
 
-## 7. Test Markers (Chạy Một Phần)
+## 8. Test Markers (Chạy Một Phần)
 
 ```bash
-# Chỉ eval (mất ~5-10 phút)
-uv run pytest tests/test_rag_deepeval_qwen.py -m qwen -vv --durations=0
+# Chỉ eval (mất ~5-15 phút tuỳ NIM rate limit)
+uv run pytest tests/test_rag_deepeval_nim.py -m qwen -vv --durations=0
 
-# Kết hợp unit tests trước (mất ~1-2 phút)
+# Kết hợp unit tests trước
 uv run pytest tests/unit_tests -q && \
-  uv run pytest tests/test_rag_deepeval_qwen.py -m qwen -vv
+  uv run pytest tests/test_rag_deepeval_nim.py -m qwen -vv
 
-# Chỉ custom locator assertion, skip DeepEval metrics (nhanh) — chưa support
+# Skip NIM answer generation (dùng top-1 chunk — nhanh, nhưng Correctness/Faithfulness không đo đầy đủ)
+TEST_SKIP_ANSWER_GEN=1 uv run pytest tests/test_rag_deepeval_nim.py -m qwen -vv
+
+# Chỉ locator check, skip DeepEval
+TEST_SKIP_DEEPEVAL=1 uv run pytest tests/test_rag_deepeval_nim.py -m qwen -vv
 ```
 
-> `ALLOW_NETWORK_TESTS=1` là bắt buộc vì DeepEval gọi eval LLM qua HTTP.
+> `ALLOW_NETWORK_TESTS=1` bắt buộc vì DeepEval gọi NIM qua HTTPS và API
+> Docker qua HTTP.
 
-## 8. Mock Retrieval For Evaluation (khi chưa có data thật)
+## 9. Mock Retrieval For Evaluation (khi chưa có data thật)
 
-Nếu cần chạy eval mà Qdrant chưa có data (dev/test), có thể patch
-`graph.with_config(...)().ainvoke`:
+Nếu cần chạy eval mà Qdrant chưa có data (dev/test), patch graph:
 
 ```python
 # tests/fakes/deepeval_graph.py
@@ -206,11 +267,25 @@ async def fake_ainvoke(state, **_):
         ],
     }
 
-# Patch in test
+# Patch in test:
 with patch("agent.routes.rag.graph") as g:
     g.with_config.return_value.ainvoke = fake_ainvoke
     response = rag_client.post("/rag/", json={...})
 ```
 
-Cách này cho phép test golden questions với ground truth đã biết (assertion trước)
-trước khi đẩy lên Qdrant thật.
+Cách này cho phép test golden questions với ground truth đã biết trước khi
+push lên Qdrant thật.
+
+## 10. So sánh với notebook `evaluation_deep_eval.ipynb`
+
+`example/evaluation_deep_eval.ipynb` là tài liệu reference. `test_rag_deepeval_nim.py`
+implement đầy đủ các pattern của notebook:
+
+| Notebook cell | Triển khai trong `test_rag_deepeval_nim.py` |
+|---|---|
+| Cell 1: `GEval(name="Correctness", ...)` | ✅ `correctness_metric` (cùng `evaluation_steps`) |
+| Cell 2: `FaithfulnessMetric(threshold=0.7, ...)` | ✅ `faithfulness_metric` |
+| Cell 3: `ContextualRelevancyMetric(threshold=1, ...)` | ✅ `relevancy_metric` (threshold 0.5 cho practical) |
+| Cell 4: `LLMTestCase(input, expected_output, actual_output, retrieval_context)` | ✅ mỗi câu hỏi |
+| Cell 5: `create_deep_eval_test_cases()` helper | ✅ cùng tên hàm |
+| Cell 6: `evaluate(test_cases=[...], metrics=[...])` | ✅ gọi batch |

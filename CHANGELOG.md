@@ -1,3 +1,46 @@
+## Unreleased (v7.2.0)
+
+### Breaking Changes
+
+- **DeepEval backend**: Xoá `tests/test_rag_deepeval_qwen.py` (Qwen + NIM song song) → thay bằng **`tests/test_rag_deepeval_nim.py`** chỉ dùng **NVIDIA NIM** (`meta/llama-3.3-70b-instruct`). Không còn `QWEN_EVAL_*`, `TEST_EVAL_BACKEND` env vars.
+- **Test file rename**: Xoá `test_rag_deepeval_qwen.py` — toàn bộ eval chuyển sang file NIM-only.
+
+### Added
+
+- **Query Transformation (optional)**: Node `query_transform` mới trong LangGraph (bật qua `QUERY_TRANSFORM_ENABLED=true`):
+  - **Rewrite**: paraphrase câu hỏi để cụ thể hơn.
+  - **Step-back**: sinh câu hỏi tổng quát hơn cho background context.
+  - **Decompose**: chia câu hỏi phức tạp thành 2-4 sub-queries.
+  - Chạy song song 3 LLM calls qua `RunnableParallel` (Qwen self-host, OpenAI-compatible endpoint). Fallback về query gốc nếu LLM lỗi.
+  - Env mới: `QUERY_TRANSFORM_ENABLED`, `QWEN_BASE_URL`, `QWEN_API_KEY`, `QWEN_MODEL`.
+- **Hybrid Retrieval (từ v7.1 nhưng bật mặc định)**: BGE-m3 trả cả dense + sparse → Qdrant `RetrievalMode.HYBRID` (kế thừa từ v7.1 commit `3d78643`).
+- **DeepEval 5 metrics** (theo reference notebook `example/evaluation_deep_eval.ipynb`):
+  - `GEval` (Correctness) — fact-correctness giữa actual vs expected.
+  - `FaithfulnessMetric` — hallucination check (actual output có grounded trong context không).
+  - `ContextualRelevancyMetric` — relevance của retrieval context với query.
+  - `ContextualPrecisionMetric` + `ContextualRecallMetric` (giữ từ v7.0/v7.1).
+  - Helper `create_deep_eval_test_cases()` + batch `evaluate()` pattern.
+- **Answer Generation trong test**: NIM tự sinh `actual_output` từ retrieved context → mới đo được Correctness/Faithfulness (route `/rag/` chỉ trả documents).
+- **Env tuning cho eval**: `TEST_SKIP_ANSWER_GEN`, `TEST_DEEPEVAL_TOP_K`, `TEST_MIN_PASS_RATIO`, `TEST_LOCATOR_STRICT`, `TEST_SKIP_DEEPEVAL`.
+
+### Changed
+
+- **Reranker**: v7.1 đã chuyển `RERANK_PROVIDER` default từ `none` → **`bge`** (local FlagReranker, cần GPU). `RERANK_MODEL=BAAI/bge-reranker-v2-m3`. Legacy `remote` vẫn hỗ trợ.
+- **Port & Network**: API port `8001` → **`8005`**, Docker network `test_network` → **`ami-network`** (external).
+- **Dockerfile**: Base image `uv:python3.13-bookworm-slim` → **`pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime`** (GPU cho local reranker). Quản lý deps bằng `requirements.txt` + `pip install` thay `uv sync`.
+- **Dependencies**: Thêm `FlagEmbedding==1.4.0`, `transformers==4.57.1`, `langchain-openai>=0.3.0` (cho Qwen LLM).
+- **Volume**: Thêm `hf-cache:/app/.cache/huggingface` cache model reranker (~1.1GB).
+- **GPU reservation**: `docker-compose.yml` thêm `deploy.resources.reservations.devices` (NVIDIA all GPUs).
+- **API Response**: `SearchResponse.page` + `source` đổi từ required → **optional** (`None` nếu metadata thiếu).
+- **Unit tests**: Thêm `tests/unit_tests/test_query_transform_node.py` (8 tests: disabled fallback, LLM success, failure fallback, parse sub-queries, multi-query retrieve dedupe, rerank dùng original query, legacy behaviour).
+- **Docs**: Cập nhật toàn bộ 14 file trong `docs/` (CONFIGURATION, SETUP, DEPLOYMENT, ARCHITECTURE, OPERATIONS, TROUBLESHOOTING, EVALUATION, TESTING, DEVELOPMENT, GLOSSARY, HANDOVER_CHECKLIST, API_REFERENCE, README.md root, docs/README.md) cho v7.1/v7.2.
+
+### Tests
+
+- 70+ unit + integration tests pass (bao gồm query_transform + retrieval multi-query).
+- DeepEval NIM-only: `ALLOW_NETWORK_TESTS=1 NVIDIA_API_KEY=xxx pytest tests/test_rag_deepeval_nim.py -m qwen -vv`.
+
+
 ## 7.1.0 (2026-07-24)
 
 ### Breaking Changes
