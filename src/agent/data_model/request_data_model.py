@@ -38,6 +38,11 @@ class RAGRequest(BaseModel):
         title="History",
         description="A list of previous questions and answers to include in the context.",
     )
+    top_k: int | None = Field(
+        default=None,
+        title="Top K",
+        description="Number of documents to return after reranking. Falls back to the server-side ``RERANK_TOP_K`` config when omitted.",
+    )
 
 
 class EmbeddTextRequest(BaseModel):

@@ -46,7 +46,12 @@ def rerank_with_bge(
     top_k: int,
     model_name: str = "BAAI/bge-reranker-v2-m3",
 ) -> list[Document]:
-    """Rerank documents using local BGE-reranker-v2-m3 via FlagEmbedding."""
+    """Rerank documents using local BGE-reranker-v2-m3 via FlagEmbedding.
+
+    Each returned document gets ``score`` written into ``metadata`` so the API
+    can expose it (previously scores were only used for sorting and then
+    dropped, which made the API's ``score`` field always null).
+    """
     if not documents:
         return documents
     if top_k <= 0 or len(documents) <= top_k:
@@ -59,7 +64,13 @@ def rerank_with_bge(
         scores = [scores]
 
     order = sorted(range(len(documents)), key=lambda i: scores[i], reverse=True)[:top_k]
-    ranked = [documents[i] for i in order]
+    ranked: list[Document] = []
+    for i in order:
+        doc = documents[i]
+        if doc.metadata is None:
+            doc.metadata = {}
+        doc.metadata["score"] = float(scores[i])
+        ranked.append(doc)
     logger.info(f"Local reranked {len(documents)} documents to top {len(ranked)}")
     return ranked
 
@@ -93,7 +104,17 @@ def rerank_with_remote(
         data = r.json()
 
     results = data.get("results", [])
-    ranked = [documents[item["index"]] for item in results if 0 <= item["index"] < len(documents)]
+    ranked: list[Document] = []
+    for item in results:
+        idx = item.get("index")
+        if idx is None or not (0 <= idx < len(documents)):
+            continue
+        doc = documents[idx]
+        if doc.metadata is None:
+            doc.metadata = {}
+        if item.get("score") is not None:
+            doc.metadata["score"] = float(item["score"])
+        ranked.append(doc)
     logger.info(f"Remote reranked {len(documents)} documents to top {len(ranked)}")
     return ranked
 
