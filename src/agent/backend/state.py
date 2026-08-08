@@ -19,3 +19,4 @@ class AgentState(TypedDict, total=False):
     documents: list[Document]
     messages: Annotated[list[BaseMessage], add_messages]
     retry_count: int
+    top_k: int | None

@@ -118,3 +118,68 @@ def test_retrieve_documents_uses_retry_k_after_first_attempt(
 
     _args, kwargs = mock_get_retriever.call_args
     assert kwargs["k"] == 99
+
+
+@patch("agent.backend.nodes.retrieval.get_reranker")
+@patch("agent.backend.nodes.retrieval.get_retriever")
+def test_retrieve_documents_top_k_from_state_overrides_cfg(
+    mock_get_retriever, mock_get_reranker
+) -> None:
+    """``state["top_k"]`` overrides ``cfg.rerank_top_k`` when calling get_reranker."""
+    from agent.backend.nodes.retrieval import retrieve_documents
+    from agent.utils.config import Config
+
+    cfg = Config(rerank_provider="bge", rerank_top_k=5)
+    mock_get_reranker.return_value = lambda d, _q: d
+    mock_get_retriever.return_value = _make_retriever_value([Document(page_content="x")])
+
+    state = {**_make_state("q"), "top_k": 7}
+    retrieve_documents(state, {}, cfg=cfg)
+
+    mock_get_reranker.assert_called_once()
+    call_kwargs = mock_get_reranker.call_args[1]
+    assert call_kwargs["top_k"] == 7
+
+
+@patch("agent.backend.nodes.retrieval.get_reranker")
+@patch("agent.backend.nodes.retrieval.get_retriever")
+def test_retrieve_documents_top_k_falls_back_to_cfg(
+    mock_get_retriever, mock_get_reranker
+) -> None:
+    """When ``top_k`` is absent from state, ``cfg.rerank_top_k`` is used."""
+    from agent.backend.nodes.retrieval import retrieve_documents
+    from agent.utils.config import Config
+
+    cfg = Config(rerank_provider="bge", rerank_top_k=11)
+    mock_get_reranker.return_value = lambda d, _q: d
+    mock_get_retriever.return_value = _make_retriever_value([Document(page_content="x")])
+
+    # top_k explicitly None — should fall back via `or cfg.rerank_top_k`
+    state = {**_make_state("q"), "top_k": None}
+    retrieve_documents(state, {}, cfg=cfg)
+
+    mock_get_reranker.assert_called_once()
+    call_kwargs = mock_get_reranker.call_args[1]
+    assert call_kwargs["top_k"] == 11
+
+
+@patch("agent.backend.nodes.retrieval.get_reranker")
+@patch("agent.backend.nodes.retrieval.get_retriever")
+def test_retrieve_documents_top_k_missing_from_state_falls_back_to_cfg(
+    mock_get_retriever, mock_get_reranker
+) -> None:
+    """Legacy states without the ``top_k`` key still work; cfg fallback applies."""
+    from agent.backend.nodes.retrieval import retrieve_documents
+    from agent.utils.config import Config
+
+    cfg = Config(rerank_provider="bge", rerank_top_k=13)
+    mock_get_reranker.return_value = lambda d, _q: d
+    mock_get_retriever.return_value = _make_retriever_value([Document(page_content="x")])
+
+    # No "top_k" key at all
+    state = _make_state("q")
+    retrieve_documents(state, {}, cfg=cfg)
+
+    mock_get_reranker.assert_called_once()
+    call_kwargs = mock_get_reranker.call_args[1]
+    assert call_kwargs["top_k"] == 13

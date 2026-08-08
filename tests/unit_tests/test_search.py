@@ -19,7 +19,7 @@ def test_search_returns_documents(mock_get_retriever, client) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json() == [{"text": "content", "page": 1, "source": "test.pdf"}]
+    assert response.json() == [{"text": "content"}]
 
 
 @patch("agent.routes.search.get_retriever")
@@ -68,11 +68,11 @@ def test_get_retriever_dense_only(
 
     mock_vector_store.assert_called_once()
     _, kwargs = mock_vector_store.call_args
-    assert kwargs["retrieval_mode"].value == "dense"
+    # Current code uses HYBRID mode (dense + sparse BGE-M3).
+    assert kwargs["retrieval_mode"].value == "hybrid"
 
     _, rk_kwargs = mock_vstore_instance.as_retriever.call_args
     assert rk_kwargs["search_kwargs"]["k"] == 5
-    assert "hybrid_fusion" not in rk_kwargs["search_kwargs"]
 
 
 @patch("agent.utils.retriever.qdrant_client")

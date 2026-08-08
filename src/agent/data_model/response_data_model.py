@@ -16,8 +16,6 @@ class SearchResponse(BaseModel):
     """The request parameters for explaining the output."""
 
     text: str = Field(..., title="Text", description="The text of the document.")
-    page: int | None = Field(default=None, title="Page", description="Page number if available.")
-    source: str | None = Field(default=None, title="Source", description="Source document or link.")
 
 
 class EmbeddingResponse(BaseModel):
@@ -31,8 +29,6 @@ class RetrievedDoc(BaseModel):
     """Retrieved document chunk with metadata and score."""
 
     text: str = Field(..., title="Text", description="Content of the document chunk.")
-    page: int | None = Field(default=None, title="Page", description="Page number if available.")
-    source: str | None = Field(default=None, title="Source", description="Source document or link.")
     score: float | None = Field(default=None, title="Score", description="Relevance or rerank score.")
     metadata: dict = Field(default_factory=dict, title="Metadata", description="Chunk metadata payload.")
 

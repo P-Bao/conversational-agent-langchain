@@ -79,8 +79,11 @@ def retrieve_documents(state: AgentState, config: RunnableConfig, *, cfg: Config
 
     # Rerank always scores against the ORIGINAL user query, never a
     # transformed variant, so the reranker measures true relevance.
+    # ``top_k`` can be overridden per-request (``state["top_k"]``); falls
+    # back to ``cfg.rerank_top_k`` when not set.
     if relevant_documents and cfg.rerank_provider != "none":
-        reranker_fn = get_reranker(cfg, top_k=cfg.rerank_top_k)
+        top_k = state.get("top_k") or cfg.rerank_top_k
+        reranker_fn = get_reranker(cfg, top_k=top_k)
         relevant_documents = reranker_fn(relevant_documents, query)
 
     return {"query": query, "documents": relevant_documents, "retry_count": retry_count}

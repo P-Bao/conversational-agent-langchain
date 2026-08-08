@@ -20,14 +20,12 @@ router = APIRouter()
 async def question_answer(rag: RAGRequest) -> RetrievalResponse:
     """Retrieving relevant documents for the query."""
     messages = [dict(m) for m in rag.messages]
-    chain_result = await graph.ainvoke({"messages": messages})
+    chain_result = await graph.ainvoke({"messages": messages, "top_k": rag.top_k})
 
     docs = chain_result.get("documents", [])
     retrieved_docs = [
         RetrievedDoc(
             text=doc.page_content,
-            page=doc.metadata.get("page"),
-            source=doc.metadata.get("source"),
             score=doc.metadata.get("score"),
             metadata=doc.metadata,
         )
@@ -35,6 +33,14 @@ async def question_answer(rag: RAGRequest) -> RetrievalResponse:
     ]
     query = chain_result.get("query") or (messages[-1]["content"] if messages else "")
     return RetrievalResponse(query=query, documents=retrieved_docs)
+
+
+_STREAM_METADATA_OMIT_KEYS = {"page", "source"}
+
+
+def _strip_stream_metadata(metadata: dict) -> dict:
+    """Drop internal-only keys from streamed metadata."""
+    return {k: v for k, v in (metadata or {}).items() if k not in _STREAM_METADATA_OMIT_KEYS}
 
 
 @router.post("/stream", tags=["rag"])
@@ -45,7 +51,10 @@ async def question_answer_stream(rag: RAGRequest) -> StreamingResponse:
     async def stream() -> AsyncGenerator[str, None]:
         yield json.dumps({"type": "status", "data": "Starting request..."}) + "\n"
 
-        async for chunk in graph.astream_events({"messages": messages}, version="v2"):
+        async for chunk in graph.astream_events(
+            {"messages": messages, "top_k": rag.top_k},
+            version="v2",
+        ):
             if chunk["event"] == "on_chain_start" and chunk["name"] == "retriever":
                 yield json.dumps({"type": "status", "data": "Searching documents..."}) + "\n"
 
@@ -57,7 +66,7 @@ async def question_answer_stream(rag: RAGRequest) -> StreamingResponse:
                 documents = [
                     {
                         "text": doc.page_content,
-                        "metadata": doc.metadata,
+                        "metadata": _strip_stream_metadata(doc.metadata),
                     }
                     for doc in chunk["data"]["output"]["documents"]
                 ]

@@ -17,4 +17,4 @@ def test_search_contract(client) -> None:
         response = client.post("/semantic/search", json={"query": "hello", "k": 2})
 
     assert response.status_code == 200
-    assert response.json() == snapshot([{"text": "hello", "page": 1, "source": "doc.txt"}])
+    assert response.json() == snapshot([{"text": "hello"}])

@@ -50,5 +50,5 @@ def test_search_endpoint_execution(mock_get_retriever, client) -> None:
     )
     assert response.status_code == 200
     assert response.json() == snapshot(
-        [{"text": "Test document content", "page": 1, "source": "test.pdf"}]
+        [{"text": "Test document content"}]
     )

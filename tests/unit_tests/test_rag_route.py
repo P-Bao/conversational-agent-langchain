@@ -33,7 +33,10 @@ def test_rag_question_answer_returns_retrieval_response(mock_graph, client) -> N
     assert data["query"] == "question"
     assert len(data["documents"]) == 2
     assert data["documents"][0]["text"] == "doc1"
-    assert data["documents"][0]["source"] == "test.pdf"
+    # Top-level page/source are removed from API output; only metadata retains them.
+    assert "page" not in data["documents"][0]
+    assert "source" not in data["documents"][0]
+    assert data["documents"][0]["metadata"]["source"] == "test.pdf"
     assert data["documents"][1]["score"] == 0.9
 
 
@@ -64,7 +67,40 @@ def test_rag_question_answer_invokes_graph_without_per_request_collection(mock_g
         json={"messages": [{"role": "user", "content": "q"}]},
     )
 
-    mock_graph.ainvoke.assert_awaited_once_with({"messages": [{"role": "user", "content": "q"}]})
+    mock_graph.ainvoke.assert_awaited_once_with({"messages": [{"role": "user", "content": "q"}], "top_k": None})
+
+
+@patch("agent.routes.rag.graph")
+def test_rag_question_answer_forwards_top_k_to_graph(mock_graph, client) -> None:
+    """When the client passes ``top_k`` it's forwarded into the graph state."""
+    mock_graph.ainvoke = AsyncMock(
+        return_value={"query": "q", "documents": []}
+    )
+
+    response = client.post(
+        "/rag/",
+        json={"messages": [{"role": "user", "content": "q"}], "top_k": 7},
+    )
+
+    assert response.status_code == 200
+    args, _kwargs = mock_graph.ainvoke.call_args
+    assert args[0]["top_k"] == 7
+
+
+@patch("agent.routes.rag.graph")
+def test_rag_question_answer_default_top_k_is_none(mock_graph, client) -> None:
+    """When the client omits ``top_k``, the graph receives ``None``."""
+    mock_graph.ainvoke = AsyncMock(
+        return_value={"query": "q", "documents": []}
+    )
+
+    client.post(
+        "/rag/",
+        json={"messages": [{"role": "user", "content": "q"}]},
+    )
+
+    args, _kwargs = mock_graph.ainvoke.call_args
+    assert args[0]["top_k"] is None
 
 
 @patch("agent.routes.rag.graph")
