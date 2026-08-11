@@ -77,7 +77,7 @@ POST /rag/  body: { "messages": [...], "collection_name": "..." }
   3. nodes/retrieval.py :: retrieve_documents -> get_retriever(collection_name, k)
   4. retriever.invoke(query) -> Qdrant hybrid search (dense + sparse fusion, remote BGE-m3 embed)
   5. get_reranker(cfg, top_k=...) -> remote rerank (provider=remote), ghi score vào metadata
-  6. Lọc theo RERANK_MIN_SCORE; clamp top_k bởi min(top_k, k)
+  6. Clamp top_k bởi min(top_k, k)
   7. Trả về RetrievalResponse(query, documents[])
 ```
 
@@ -111,8 +111,8 @@ GET /readyz  -> 200 {"status": "ready", "collection": "default"} (Qdrant OK + co
 | Hybrid search (dense + sparse fusion) | Remote embed server trả cả `dense_vecs` lẫn `sparse_vecs`; fusion nâng recall so với dense-only. |
 | `EMBEDDING_BASE_URL` bắt buộc | Là base URL của remote server (GPU self-hosted). Không có default;.env phải điền. |
 | Reranker default = `"remote"` | Default dùng remote BGE-reranker qua `RERANK_BASE_URL`; đặt `none` nếu muốn passthrough; `bge` giữ làm fallback local. |
-| `RERANK_MIN_SCORE` lọc sau rerank | Chỉ giữ documents có score ≥ ngưỡng; default `0.0` (giữ tất cả). |
 | Fail-fast khi rerank remote lỗi | Không tự fallback sang local `bge` khi remote fail — tránh silent behavior change; lỗi hiện rõ trong log. |
+| Không lọc theo min_score | Client không gửi `min_score` — BGE-reranker trả raw logit (có thể âm); chỉ giữ `top_k` do server sort. |
 | LangGraph giữ nguyên | Đảm bảo tương thích với downstream consumers; chỉ rút gọn module xung quanh. |
 
 ## 5. Biểu Đồ Thành Phần

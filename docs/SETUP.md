@@ -64,7 +64,6 @@ EMBEDDING_BASE_URL=http://localhost:8008
 # === Rerank (remote — default) ===
 RERANK_PROVIDER=remote
 RERANK_BASE_URL=http://localhost:8010
-RERANK_MIN_SCORE=0.0
 RERANK_TOP_K=5
 # RERANK_TIMEOUT=60
 ```

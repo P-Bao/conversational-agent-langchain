@@ -139,9 +139,6 @@ QWEN_EVAL_MODEL=qwen
 | `TEST_DEEPEVAL_TOP_K` | `5` | Số top-K context đưa vào `LLMTestCase.retrieval_context` |
 | `TEST_MIN_PASS_RATIO` | `0.7` | Tỷ lệ câu hỏi tối thiểu phải pass để test assert pass (0.0-1.0) |
 
-> `RERANK_MIN_SCORE` (default `0.0`) cũng ảnh hưởng eval: nếu set > 0, documents có
-> score rerank thấp hơn ngưỡng sẽ bị lọc trước khi đưa vào `retrieval_context`.
-
 ## 5. Interpret Results
 
 DeepEval output:

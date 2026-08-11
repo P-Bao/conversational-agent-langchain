@@ -3,15 +3,12 @@
 ### Changed
 
 - **Reranker mặc định chuyển sang remote HTTP**: `RERANK_PROVIDER` default đổi `bge` → **`remote`** (rerank server, vd `http://127.0.0.1:8010`). Contract mới:
-  - Request: `POST /rerank` với `{"query", "documents", "top_k", "min_score"}`.
-  - Response: `{"scores": [float, ...], "ranked_indices": [int, ...]}`. `scores` toàn bộ theo thứ tự input (đã normalize 0-1); `ranked_indices` đã sort giảm dần + áp `top_k` + `min_score` (server-side filter).
+  - Request: `POST /rerank` với `{"query", "documents", "top_k"}`.
+  - Response: `{"scores": [float, ...], "ranked_indices": [int, ...]}`. `scores` toàn bộ theo thứ tự input (raw logits, có thể âm); `ranked_indices` đã sort giảm dần + áp `top_k`.
   - Fallback tương thích ngược với contract cũ `{"results": [{index, score}]}` (Colab).
 - **Fail-fast**: Khi server remote lỗi / timeout → API raise (không auto-fallback sang local `bge`).
 - **`top_k` giới hạn**: `RAGRequest.top_k` Pydantic `ge=1, le=40` (theo `RETRIEVAL_K`); clamp thêm về `min(top_k, k)` trong `retrieve_documents` (không rerank vượt số doc retrieve được).
-
-### Added
-
-- **`RERANK_MIN_SCORE`** (default `0.0`): ngưỡng server-side lọc doc theo score.
+- **Bỏ `min_score`**: client không còn gửi `min_score` (server BGE-reranker trả raw logit âm, lọc `>= 0.0` sẽ làm rỗng kết quả).
 
 ### Kept
 

@@ -25,7 +25,7 @@
 - [x] `.env` — file làm việc thực tế (đã khớp template)
 - [x] Tất cả env vars đều có default an toàn trong `config.py`
 - [x] Backward-compat: `AU_EMBED_BASE_URL` (→ `EMBEDDING_BASE_URL`), `AU_RERANK_BASE_URL` (→ `RERANK_BASE_URL`). Các var cũ (`EMBEDDING_MODEL`, `SPARSE_MODEL`, `FUSION_ALGORITHM`, `RERANK_MODEL`) đã bỏ.
-- [x] Rerank default `remote` (cần `RERANK_BASE_URL`); `RERANK_MIN_SCORE=0.0`; `top_k` 1-40.
+- [x] Rerank default `remote` (cần `RERANK_BASE_URL`); `top_k` 1-40.
 
 ## 4. API Endpoints (v8.1.0)
 
@@ -52,7 +52,7 @@
 - [x] DeepEval suite: `ALLOW_NETWORK_TESTS=1 pytest tests/test_rag_deepeval_qwen.py` (Qwen / NVIDIA NIM)
 - [x] Golden questions dataset: `tests/golden_questions_v2.json` (DeepEval goldens)
 - [x] Health check tests: `tests/unit_tests/test_health.py` (6 tests pass)
-- [x] Rerank contract tests: `tests/unit_tests/test_reranker.py` (remote `scores`+`ranked_indices`, min_score, backward-compat)
+- [x] Rerank contract tests: `tests/unit_tests/test_reranker.py` (remote `scores`+`ranked_indices`, top_k forwarding, backward-compat)
 
 ## 6. Scripts
 

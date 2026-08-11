@@ -8,7 +8,7 @@ Backend RAG retrieval service: trả về context (documents) cho downstream LLM
 - **Direct Semantic Search**: `/semantic/search` — hybrid search không qua graph pipeline.
 - **Health checks**: `/healthz` (liveness) + `/readyz` (Qdrant + collection readiness) cho Docker / Kubernetes.
 - **Remote BGE-m3 Embedding (dense+sparse)**: Gọi BGE-m3 qua `EMBEDDING_BASE_URL` (vd `http://bge-m3-embed:8008`). Bearer auth qua `EMBEDDING_API_KEY`.
-- **Rerank mặc định remote qua `:8010`**: `RERANK_PROVIDER=remote` (contract `{scores, ranked_indices}` + `min_score`); fallback `bge` local (cần GPU) qua `RERANK_PROVIDER=bge`; `none` passthrough.
+- **Rerank mặc định remote qua `:8010`**: `RERANK_PROVIDER=remote` (contract `{scores, ranked_indices}`); fallback `bge` local (cần GPU) qua `RERANK_PROVIDER=bge`; `none` passthrough.
 - **`top_k` request param** (`/rag/` + `/rag/stream`): override `RERANK_TOP_K` per-request (1-40).
 - **LangGraph Graph (giữ nguyên)**: Pipeline retrieval 1-node `retriever` → END.
 - **DeepEval với Qwen Self-host**: Suite đánh giá `ContextualPrecision` và `ContextualRecall` chạy qua TestClient `POST /rag/`.

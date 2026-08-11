@@ -18,7 +18,7 @@
 |---|---|---|
 | **Retrieval-Only** | Repo chỉ trả về documents, không sinh answer. Downstream LLM chịu trách nhiệm sinh câu trả lời từ context này. | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | **Readiness probe** | Endpoint `/readyz` xác nhận Qdrant có kết nối + collection tồn tại. Trả 200 + `ready` hoặc 503 + `reason`. | [DEPLOYMENT.md](DEPLOYMENT.md) |
-| **Reranking** | Bước thứ 2 sau search: dùng cross-encoder (remote, default) để sắp xếp lại top-K documents theo relevance. BGE-reranker-v2-m3 (qua HTTP) cho kết quả chính xác hơn raw search score. Default v8.1 = BẬT (`RERANK_PROVIDER=remote`); lọc thêm theo `RERANK_MIN_SCORE`. | `src/agent/utils/reranker.py`, [CONFIGURATION.md](CONFIGURATION.md) |
+| **Reranking** | Bước thứ 2 sau search: dùng cross-encoder (remote, default) để sắp xếp lại top-K documents theo relevance. BGE-reranker-v2-m3 (qua HTTP) cho kết quả chính xác hơn raw search score. Default v8.1 = BẬT (`RERANK_PROVIDER=remote`). | `src/agent/utils/reranker.py`, [CONFIGURATION.md](CONFIGURATION.md) |
 | **DeepEval** | Framework đánh giá quality của retrieval: ContextualPrecision (độ chính xác) và ContextualRecall (độ bao phủ). Dùng LLM (Qwen/NVIDIA) làm judge. Ở v7 chạy qua TestClient (`/rag/`) chứ không gọi Graph() trực tiếp. | [EVALUATION.md](EVALUATION.md), `tests/test_rag_deepeval_qwen.py` |
 | **QDrant** | Vector database hỗ trợ dense/sparse vector search + filter + payload. V8 giao tiếp qua HTTP (`:6333`). | [DEPLOYMENT.md](DEPLOYMENT.md) |
 | **External Management System** | Hệ thống quản lý Qdrant riêng biệt — chịu trách nhiệm tạo collection, ingest data, xoá document. Repo này chỉ **đọc** Qdrant. | [DATA_INGESTION.md](DATA_INGESTION.md) |

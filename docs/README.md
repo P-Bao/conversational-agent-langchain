@@ -74,7 +74,7 @@
 2. **Migration Mongo dump → Qdrant (`migrate_dump_to_qdrant.py`) đã được
    loại bỏ** — thuộc về repo ingestion ngoài.
 3. **Default reranker = `remote`** (HTTP server). Cần `RERANK_BASE_URL` trỏ tới
-   server chạy BGE-reranker; lọc theo `RERANK_MIN_SCORE`. Alternatives: `bge`
+   server chạy BGE-reranker. Alternatives: `bge`
    (local FlagEmbedding), `none` (passthrough).
 4. **Health check**: `/healthz` (liveness) + `/readyz` (Qdrant connectivity).
 5. **Retrieval hybrid** (dense + sparse fusion) từ remote BGE-m3; `top_k` 1-40.

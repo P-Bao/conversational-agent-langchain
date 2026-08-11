@@ -43,7 +43,7 @@ Các test file trong `tests/unit_tests/` (v8.1.0):
 | `test_retrieval_node.py` | `retrieve_documents` qua LangGraph: K, retry, rerank skip/apply, clamp `top_k` |
 | `test_reranker.py` | `get_reranker(provider=...)`: none / remote (contract mới `scores`+`ranked_indices`, backward-compat) / bge |
 | `test_vdb.py` | `qdrant_client` & `async_qdrant_client` singleton |
-| `test_config.py` | Pydantic `Config` defaults (`embedding_provider=remote`, `embedding_base_url=""`, `rerank_provider=remote`, `rerank_base_url=""`, `rerank_min_score=0.0`, qdrant, retrieval, rerank) |
+| `test_config.py` | Pydantic `Config` defaults (`embedding_provider=remote`, `embedding_base_url=""`, `rerank_provider=remote`, `rerank_base_url=""`, qdrant, retrieval, rerank) |
 | `test_embeddings_bge.py` | `BGEM3RemoteEmbeddings` wrapper (test qua mocked httpx, không load model thật) |
 | `test_health.py` | `/healthz` + `/readyz` (collection_exists + error branches) |
 
@@ -80,7 +80,7 @@ Chi tiết xem [EVALUATION.md](EVALUATION.md).
 
 - `test_env_defaults`: set mặc định env vars cho test (`EMBEDDING_PROVIDER=remote`,
   `EMBEDDING_BASE_URL=http://mock` mock, `RERANK_PROVIDER=remote`,
-  `RERANK_BASE_URL=http://mock-reranker`, `RERANK_MIN_SCORE=0.0`, `QDRANT_URL=...`).
+  `RERANK_BASE_URL=http://mock-reranker`, `QDRANT_URL=...`).
 - `block_external_http`: mặc định chặn HTTP ra ngoài (trừ localhost). Bỏ qua
   nếu `ALLOW_NETWORK_TESTS=1` hoặc test có marker `vcr` / `qwen`.
 - `app` fixture: import FastAPI app (v8 không có module-level side effects nên
@@ -95,7 +95,6 @@ EMBEDDING_BASE_URL=http://mock-embedding
 EMBEDDING_TIMEOUT=60
 RERANK_PROVIDER=remote
 RERANK_BASE_URL=http://mock-reranker
-RERANK_MIN_SCORE=0.0
 RERANK_TIMEOUT=60
 QDRANT_URL=http://localhost
 QDRANT_PORT=6333

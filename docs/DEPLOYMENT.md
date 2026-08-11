@@ -100,7 +100,6 @@ EMBEDDING_PROVIDER=remote
 EMBEDDING_BASE_URL=http://host.docker.internal:8008   # remote BGE-m3 embed server
 RERANK_PROVIDER=remote                                # default — remote
 RERANK_BASE_URL=http://host.docker.internal:8010      # remote BGE reranker
-RERANK_MIN_SCORE=0.0                                  # lọc sau rerank
 ```
 
 > Khi API chạy trong Docker mà embed/rerank server chạy trên host (bind

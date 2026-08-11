@@ -19,7 +19,7 @@ conversational-agent-langchain/
 │   │   ├── search.py               # POST /semantic/search
 │   │   └── health.py               # GET /healthz, /readyz
 │   └── utils/
-│       ├── config.py               # Pydantic Settings (embedding_provider=remote, rerank_provider=remote, rerank_min_score=0.0)
+│       ├── config.py               # Pydantic Settings (embedding_provider=remote, rerank_provider=remote)
 │       ├── embeddings.py           # Remote BGE-m3 dense+sparse (HTTP) — BGEM3RemoteEmbeddings
 │       ├── vdb.py                  # Qdrant client (sync + async) — No collection mgmt
 │       ├── retriever.py            # Hybrid retriever (dense + sparse fusion)
@@ -143,7 +143,6 @@ Thay đổi ở đây ảnh hưởng tới cả `/rag/`, `/rag/stream`, `/semant
 | Thay đổi base URL remote | `.env`: `EMBEDDING_BASE_URL` |
 | Thay đổi rerank provider | `.env`: `RERANK_PROVIDER` (none / remote / bge) |
 | Thay đổi base URL reranker | `.env`: `RERANK_BASE_URL` |
-| Thay đổi ngưỡng lọc rerank | `.env`: `RERANK_MIN_SCORE` |
 | Thay đổi số doc sau rerank | `.env`: `RERANK_TOP_K` |
 | Thay đổi clamp `top_k` | `src/agent/backend/nodes/retrieval.py` (`min(top_k, k)`) |
 | Thêm bước sau rerank | `src/agent/backend/nodes/retrieval.py` |

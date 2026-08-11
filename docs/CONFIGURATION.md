@@ -37,7 +37,6 @@
 |---|---|---|---|
 | `RERANK_PROVIDER` | — | `remote` | **`remote`** = HTTP tới `RERANK_BASE_URL` (rerank-server :8010); **`bge`** = local FlagEmbedding fallback (cần GPU); **`none`** = passthrough `docs[:top_k]`. |
 | `RERANK_BASE_URL` | `AU_RERANK_BASE_URL` | `""` | Base URL của rerank server (vd `http://127.0.0.1:8010`). **Bắt buộc** khi `RERANK_PROVIDER=remote`. |
-| `RERANK_MIN_SCORE` | — | `0.0` | Ngưỡng lọc doc theo score (gửi qua payload `min_score` **chỉ khi > 0**). `0.0` = giữ tất cả (không gửi — tránh loại doc có raw logit âm). |
 | `RERANK_TOP_K` | — | `5` | Số document giữ lại sau rerank (fallback khi client không gửi `top_k`). |
 | `RERANK_MODEL` | `AU_RERANK_MODEL_NAME` | `BAAI/bge-reranker-v2-m3` | Model cho fallback `bge` local. |
 | `RERANK_TIMEOUT` | — | `60` | Timeout (giây) khi gọi remote `/rerank` endpoint. |
@@ -46,15 +45,15 @@
 
 Request:
 ```json
-{"query": "...", "documents": ["...", "..."], "top_k": 5, "min_score": 0.0}
+{"query": "...", "documents": ["...", "..."], "top_k": 5}
 ```
 Response:
 ```json
 {"scores": [0.9978, 0.0018], "ranked_indices": [0]}
 ```
-- `scores` = điểm (đã normalize 0-1) theo thứ tự input documents.
-- `ranked_indices` = index đã sort giảm dần + áp `top_k` + `min_score`.
-- Có fallback tương thích ngược với contract cũ `{"results": [{index, score}]}` (server Colab).
+- `scores` = điểm theo thứ tự input documents (raw logits của BGE-reranker — có thể âm).
+- `ranked_indices` = index đã sort giảm dần + áp `top_k`.
+- Client **không gửi** `min_score` — server không filter theo ngưỡng score.
 
 > **Fail-fast**: Khi `remote` server lỗi / timeout → API raise 5xx. Không tự
 > động chuyển sang local `bge`. Nếu cần fallback bền vững, set cấu hình
