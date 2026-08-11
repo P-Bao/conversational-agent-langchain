@@ -1,4 +1,4 @@
-# Hướng Dẫn Phát Triển — Development Guide (v7.0.0)
+# Hướng Dẫn Phát Triển — Development Guide (v8.1.0)
 
 ## 1. Project Structure
 
@@ -19,11 +19,11 @@ conversational-agent-langchain/
 │   │   ├── search.py               # POST /semantic/search
 │   │   └── health.py               # GET /healthz, /readyz
 │   └── utils/
-│       ├── config.py               # Pydantic Settings (embedding_provider=remote, rerank_provider=none)
-│       ├── embeddings.py           # Remote BGE-m3 dense (HTTP) — BGEM3RemoteEmbeddings
+│       ├── config.py               # Pydantic Settings (embedding_provider=remote, rerank_provider=remote, rerank_min_score=0.0)
+│       ├── embeddings.py           # Remote BGE-m3 dense+sparse (HTTP) — BGEM3RemoteEmbeddings
 │       ├── vdb.py                  # Qdrant client (sync + async) — No collection mgmt
-│       ├── retriever.py            # Dense retriever (RetrievalMode.DENSE, no fusion)
-│       └── reranker.py             # get_reranker(cfg, *, top_k) — providers: none / remote
+│       ├── retriever.py            # Hybrid retriever (dense + sparse fusion)
+│       └── reranker.py             # get_reranker(cfg, *, top_k) — providers: none / remote / bge
 ├── tests/
 │   ├── conftest.py
 │   ├── unit_tests/
@@ -92,6 +92,9 @@ conversational-agent-langchain/
 - `health.py` import `Config` + `vdb`
 - Routes import từ `utils.*`, `backend.*`, `data_model.*`
 
+> `retriever.py` và `reranker.py` không import chéo nhau — `reranker.py` là
+> standalone module nhận `Config` + documents.
+
 ## 3. Adding a New Endpoint
 
 1. Tạo route module trong `src/agent/routes/` hoặc thêm vào module có sẵn
@@ -124,7 +127,8 @@ my_provider_api_key: str = ""
 # MY_PROVIDER_API_KEY=
 ```
 
-> Local `bge` (FlagEmbedding) đã bị loại bỏ — không chạy model trong Docker.
+> Local `bge` (FlagEmbedding) được giữ làm **fallback** cho `RERANK_PROVIDER=bge`
+> (không default — default là `remote`). Không chạy model embedding trong Docker.
 
 ## 5. Modifying the Retriever / Reranker Flow
 
@@ -137,9 +141,11 @@ Thay đổi ở đây ảnh hưởng tới cả `/rag/`, `/rag/stream`, `/semant
 |---|---|
 | Thay đổi K | `.env`: `RETRIEVAL_K` |
 | Thay đổi base URL remote | `.env`: `EMBEDDING_BASE_URL` |
-| Thay đổi rerank provider | `.env`: `RERANK_PROVIDER` |
+| Thay đổi rerank provider | `.env`: `RERANK_PROVIDER` (none / remote / bge) |
 | Thay đổi base URL reranker | `.env`: `RERANK_BASE_URL` |
+| Thay đổi ngưỡng lọc rerank | `.env`: `RERANK_MIN_SCORE` |
 | Thay đổi số doc sau rerank | `.env`: `RERANK_TOP_K` |
+| Thay đổi clamp `top_k` | `src/agent/backend/nodes/retrieval.py` (`min(top_k, k)`) |
 | Thêm bước sau rerank | `src/agent/backend/nodes/retrieval.py` |
 
 ## 6. Git / Branch Workflow
@@ -176,7 +182,8 @@ git commit -m "feat: description"
 ## 8. Known Dev Gotchas
 
 - `load_dotenv()` được gọi ở `api.py` (trước `Config`) — env vars từ `.env` có sẵn cho Pydantic Settings.
-- **Không có module-level side effect** ở v7 (`vdb.py`, `api.py`). `QdrantClient` được build từ Config nhưng exception nếu Qdrant down sẽ không crash import — chỉ fail khi gọi API.
+- **Không có module-level side effect** ở v8 (`vdb.py`, `api.py`). `QdrantClient` được build từ Config nhưng exception nếu Qdrant down sẽ không crash import — chỉ fail khi gọi API.
 - `get_retriever` cache `QdrantVectorStore` theo `collection_name`. Cần `retriever_module._vector_store_cache.clear()` giữa các test nếu muốn kiểm tra `QdrantVectorStore(...)` được tạo lại.
-- Conftest default `RERANK_PROVIDER=none`. Nếu test cần rerank → set env trước `Config(...)` hoặc explicit override.
+- Conftest default `RERANK_PROVIDER=remote` + `RERANK_BASE_URL=http://mock-reranker`. Nếu test cần rerank thật → set env trước `Config(...)` hoặc explicit override.
+- `rerank_with_remote` fail-fast: khi remote không reachable, hàm raise (không fallback). Test dùng mocked httpx.
 - Test deepeval (`test_rag_deepeval_qwen.py`) chạy qua `TestClient.post('/rag/', ...)`, **không gọi `Graph().invoke()` trực tiếp** — dễ test hơn vì không cần mock graph internals.

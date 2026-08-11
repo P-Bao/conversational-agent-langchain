@@ -33,7 +33,7 @@ Các bước ingestion (chunk → embed → upsert Qdrant) hiện được thự
 - **Qdrant Dashboard / REST API** — nếu chỉ cần thao tác thủ công trên dev.
 
 Liên hệ team ingestion để biết:
-- Collection name & schema (dense vector size 1024 — repo này dense-only).
+- Collection name & schema (dense vector size 1024 + sparse named vector cho hybrid).
 - Chunking strategy (Markdown-aware 1500/100 hay simple 750/200).
 - Checkpoint / resume format.
 - Pipeline khởi chạy & monitoring.
@@ -44,7 +44,7 @@ Liên hệ team ingestion để biết:
 
 | Field | Requirement |
 |---|---|
-| `vectors_config` | Dense vector size 1024 (BGE-m3), distance = `COSINE`. Không dùng sparse named vector — repo này dense-only. |
+| `vectors_config` | Dense vector size 1024 (BGE-m3), distance = `COSINE`; sparse named vector (BGE-m3 sparse) nếu dùng hybrid fusion. |
 | `payload` | tối thiểu `source` (string), `page` (int) — repo này đọc qua `metadata.source`, `metadata.page` |
 
 > Nếu collection không tồn tại, `/readyz` sẽ trả `503` với `reason: collection_missing`.
@@ -53,15 +53,15 @@ Liên hệ team ingestion để biết:
 
 ```bash
 # 1. Health
-curl http://<rag-api>:8001/healthz
+curl http://<rag-api>:8005/healthz
 # {"status":"ok"}
 
 # 2. Readiness — phải có collection
-curl http://<rag-api>:8001/readyz
+curl http://<rag-api>:8005/readyz
 # {"status":"ready","collection":"documents"}
 
 # 3. Search thử — kiểm tra retrieval hoạt động
-curl -X POST http://<rag-api>:8001/semantic/search \
+curl -X POST http://<rag-api>:8005/semantic/search \
   -H "Content-Type: application/json" \
   -d '{"query":"smoke test","k":3,"collection_name":"default"}'
 ```

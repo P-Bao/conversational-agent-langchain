@@ -1,3 +1,38 @@
+## 8.1.0 (2026-08-11)
+
+### Changed
+
+- **Reranker mặc định chuyển sang remote HTTP**: `RERANK_PROVIDER` default đổi `bge` → **`remote`** (rerank server, vd `http://127.0.0.1:8010`). Contract mới:
+  - Request: `POST /rerank` với `{"query", "documents", "top_k", "min_score"}`.
+  - Response: `{"scores": [float, ...], "ranked_indices": [int, ...]}`. `scores` toàn bộ theo thứ tự input (đã normalize 0-1); `ranked_indices` đã sort giảm dần + áp `top_k` + `min_score` (server-side filter).
+  - Fallback tương thích ngược với contract cũ `{"results": [{index, score}]}` (Colab).
+- **Fail-fast**: Khi server remote lỗi / timeout → API raise (không auto-fallback sang local `bge`).
+- **`top_k` giới hạn**: `RAGRequest.top_k` Pydantic `ge=1, le=40` (theo `RETRIEVAL_K`); clamp thêm về `min(top_k, k)` trong `retrieve_documents` (không rerank vượt số doc retrieve được).
+
+### Added
+
+- **`RERANK_MIN_SCORE`** (default `0.0`): ngưỡng server-side lọc doc theo score.
+
+### Kept
+
+- **`bge` local (FlagEmbedding) làm fallback**: provider `bge` vẫn được hỗ trợ, chỉ đổi default. Cần GPU trong container.
+
+## 8.0.0 (2026-07-28)
+
+### Changed
+
+- **Reranker về local FlagEmbedding**: `RERANK_PROVIDER` default `none` → **`bge`** (GPU), `RERANK_MODEL=BAAI/bge-reranker-v2-m3`. [6927c7d]
+- **Retrieval hybrid dense+sparse BGE-m3 qua embedding-server** (`EMBEDDING_BASE_URL` vd `http://bge-m3-embed:8008`). Thêm `EMBEDDING_API_KEY` (Bearer auth) và `embedding_return_sparse`. Qdrant vector `dense` + named vector `sparse`. [48c046b][5b3ccdf]
+- **Docker CUDA + GPU**: Dockerfile `pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime`; `docker-compose.yml` thêm GPU reservation + `hf-cache` volume; port `8001` → **`8005`**; network → **`ami-network`**; chuyển từ `uv sync` sang `pip install -r requirements.txt`. [1dde6bf..8ed767d]
+
+### Added
+
+- **`top_k` request param** (`/rag/`, `/rag/stream`): override `RERANK_TOP_K` per-request; truyền qua graph state. [603247e]
+
+### Removed
+
+- **`page` / `source` khỏi response schema**: `SearchResponse` và `RetrievedDoc`; `/rag/stream` strip `page`/`source` khỏi metadata streamed. [b3fa44a][603247e]
+
 ## 7.1.0 (2026-07-24)
 
 ### Breaking Changes

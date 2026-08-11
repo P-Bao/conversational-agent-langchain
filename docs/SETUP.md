@@ -1,4 +1,4 @@
-# Hướng Dẫn Cài Đặt — Retrieval & Search API v7.0.0
+# Hướng Dẫn Cài Đặt — Retrieval & Search API v8.1.0
 
 ## 1. Yêu Cầu Hệ Thống
 
@@ -8,7 +8,7 @@
 | uv | 0.5+ | Project package manager |
 | Docker + Docker Compose | Docker 24+, Compose v2 | Cho production deployment |
 | Qdrant | 1.18+ | Vector database chạy riêng biệt, **collection do hệ ngoài dựng** |
-| Remote BGE-m3 server | — | Colab ngrok hoặc self-host GPU server (chạy notebook `rag_test_bge_m3_reranker_ngrok.ipynb`). API container chỉ gọi HTTP, không cần GPU/CUDA |
+| Remote BGE-m3 server | — | GPU server (embed `:8008`, rerank `:8010`). API container chỉ gọi HTTP, không cần GPU/CUDA. Nếu không có rerank server: `RERANK_PROVIDER=bge` (local) hoặc `none` |
 
 ## 2. Cài Đặt Local (Development)
 
@@ -56,14 +56,15 @@ QDRANT_URL=http://localhost
 QDRANT_PORT=6333
 QDRANT_COLLECTION_NAME=documents
 
-# === Embedding (remote BGE-m3 — chạy notebook Colab trước) ===
+# === Embedding (remote BGE-m3 — GPU server trước) ===
 EMBEDDING_PROVIDER=remote
-EMBEDDING_BASE_URL=https://xxxx.ngrok-free.app
+EMBEDDING_BASE_URL=http://localhost:8008
 # EMBEDDING_TIMEOUT=60
 
-# === Default không rerank ===
-RERANK_PROVIDER=none
-RERANK_BASE_URL=https://xxxx.ngrok-free.app
+# === Rerank (remote — default) ===
+RERANK_PROVIDER=remote
+RERANK_BASE_URL=http://localhost:8010
+RERANK_MIN_SCORE=0.0
 RERANK_TOP_K=5
 # RERANK_TIMEOUT=60
 ```
@@ -71,18 +72,18 @@ RERANK_TOP_K=5
 ### Bước 5: Verify
 
 ```bash
-uv run uvicorn agent.api:app --reload --port 8001
+uv run uvicorn agent.api:app --reload --port 8005
 ```
 
-Mở `http://localhost:8001/docs` để xem Swagger UI. Kiểm tra:
+Mở `http://localhost:8005/docs` để xem Swagger UI. Kiểm tra:
 
 ```bash
 # Liveness
-curl http://localhost:8001/healthz
+curl http://localhost:8005/healthz
 # {"status":"ok"}
 
 # Readiness (cần Qdrant + collection)
-curl http://localhost:8001/readyz
+curl http://localhost:8005/readyz
 ```
 
 Nếu `/readyz` trả về `503 collection_missing`, bạn cần nạp data vào Qdrant
@@ -108,11 +109,11 @@ docker compose up --build -d
 ### Bước 3: Kiểm Tra
 
 ```bash
-curl http://localhost:8001/healthz
+curl http://localhost:8005/healthz
 # {"status":"ok"}
-curl http://localhost:8001/readyz
+curl http://localhost:8005/readyz
 # (nếu collection tồn tại) {"status":"ready","collection":"documents"}
-curl http://localhost:8001/docs
+curl http://localhost:8005/docs
 ```
 
 ## 4. Frontend (Streamlit)
@@ -127,13 +128,13 @@ Sau khi setup, chạy smoke test:
 
 ```bash
 # 1. Liveness (luôn 200 nếu process sống)
-curl http://localhost:8001/healthz
+curl http://localhost:8005/healthz
 
 # 2. Readiness (phải 200 + ready)
-curl http://localhost:8001/readyz
+curl http://localhost:8005/readyz
 
 # 3. Search thử
-curl -X POST http://localhost:8001/semantic/search \
+curl -X POST http://localhost:8005/semantic/search \
   -H "Content-Type: application/json" \
   -d '{"query":"test","k":3,"collection_name":"documents"}'
 
@@ -165,24 +166,24 @@ curl http://localhost:6333/
 
 Chi tiết xem [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
-### Embedding endpoint không trả lời
+### Embedding / Rerank server không trả lời
 
 API container không tải model — embedding/rerank delegate tới remote server qua
 `EMBEDDING_BASE_URL` / `RERANK_BASE_URL`. Nếu query treo hoặc timeout:
 
-1. Mở notebook `rag_test_bge_m3_reranker_ngrok.ipynb` trên Colab (T4), chạy hết
-   cell để khởi động server + lấy ngrok public URL.
-2. Cập nhật `.env`: `EMBEDDING_BASE_URL` (và `RERANK_BASE_URL` nếu rerank) bằng
-   URL ngrok mới (`https://xxxx.ngrok-free.app`).
+1. Khởi động GPU server (embed + rerank) trên host / server riêng.
+2. Cập nhật `.env`: `EMBEDDING_BASE_URL` và `RERANK_BASE_URL` (nếu
+   `RERANK_PROVIDER=remote`, mặc định). Khi API chạy trong Docker, dùng
+   `http://host.docker.internal:<port>` thay `localhost`.
 3. Restart API: `docker compose restart` (hoặc `uv run uvicorn ... --reload`).
 
-> Colab ngrok URL đổi mỗi lần notebook stop/start. Nếu production, dùng self-host
-> GPU server có fixed URL. `EMBEDDING_TIMEOUT` / `RERANK_TIMEOUT` (default 60s)
+> Nếu không có rerank server, set `RERANK_PROVIDER=bge` (local FlagEmbedding)
+> hoặc `none` (passthrough). `EMBEDDING_TIMEOUT` / `RERANK_TIMEOUT` (default 60s)
 > configurable nếu remote server chậm.
 
 ### Không còn torch / CUDA
 
-API container không còn dependency `torch` / `transformers` / `FlagEmbedding`
-(embedding remote). Không cần cài CUDA trong container. Nếu thấy import torch
-thất bại, kiểm tra `pyproject.toml` không còn `FlagEmbedding` — chạy `uv sync`
-lại.
+API container không còn bắt buộc dependency `torch` / `transformers` /
+`FlagEmbedding` (embedding remote). Nếu set `RERANK_PROVIDER=bge`, local cần cài
+`FlagEmbedding` (qua `uv sync`). Nếu thấy import torch thất bại khi dùng `bge`,
+kiểm tra `pyproject.toml` + chạy `uv sync` lại.

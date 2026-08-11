@@ -1,4 +1,4 @@
-# Bảo Mật — Security Guide (v7.0.0)
+# Bảo Mật — Security Guide (v8.1.0)
 
 ## 1. Secret Management
 
@@ -26,9 +26,11 @@ secrets:
 
 | Service | Port | Expose ra ngoài? | Khuyến nghị |
 |---|---|---|---|
-| API | 8001 | Optional | Chỉ expose sau reverse proxy (nginx/traefik) có TLS |
+| API | 8005 | Optional | Chỉ expose sau reverse proxy (nginx/traefik) có TLS |
 | Qdrant REST | 6333 | Không | Chỉ access từ API container hoặc management network |
 | Qdrant gRPC | 6334 | Không | Internal |
+| Embed server (HTTP) | 8008 | Không | Internal / host-only |
+| Rerank server (HTTP) | 8010 | Không | Internal / host-only |
 
 ### Reverse proxy setup (ví dụ nginx):
 
@@ -38,13 +40,13 @@ server {
     server_name rag-api.example.com;
 
     location / {
-        proxy_pass http://localhost:8001;
+        proxy_pass http://localhost:8005;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
 
     location /readyz {
-        proxy_pass http://localhost:8001;
+        proxy_pass http://localhost:8005;
         # Không cache health endpoint
         proxy_cache off;
     }
@@ -58,20 +60,19 @@ server {
 ### Model Provenance
 
 > Từ v7.1 repo này **không pull/tải model** vào Docker container. BGE-m3 +
-> BGE-reranker-v2-m3 chạy trên **remote server** (Colab ngrok hoặc server GPU
-> riêng) — xem notebook `rag_test_bge_m3_reranker_ngrok.ipynb`. Container API
-> chỉ gọi HTTP tới `EMBEDDING_BASE_URL` / `RERANK_BASE_URL`.
+> BGE-reranker chạy trên **remote server** (GPU) — container API chỉ gọi HTTP
+> tới `EMBEDDING_BASE_URL` / `RERANK_BASE_URL`. Nếu set `RERANK_PROVIDER=bge`,
+> model rerank được tải local trong container (cần GPU/RAM tương ứng).
 
 | Model | Chạy ở đâu | HuggingFace ID | Checksum / hash? |
 |---|---|---|---|
 | Dense (BGE-m3) | Remote server (ngoài container) | `BAAI/bge-m3` | Do remote server verify |
-| Reranker (optional) | Remote server (ngoài container) | `BAAI/bge-reranker-v2-m3` | Do remote server verify |
+| Reranker | Remote server (ngoài container) hoặc local (`bge`) | `BAAI/bge-reranker-v2-m3` | Do remote server verify |
 
 **Khuyến nghị production**:
-- Verify hash/sốported của remote server (nó chịu trách nhiệm tải model).
-- Bảo vệ ngrok URL / server endpoint bằng auth hoặc IP allowlist khi production
-  (Colab ngrok public URL là dev-only, không nên dùng production).
-- Pin phiên bản notebook server khi reproducibility quan trọng.
+- Verify hash/source của remote server (nó chịu trách nhiệm tải model).
+- Bảo vệ embed/rerank endpoint bằng auth hoặc IP allowlist khi production.
+- Pin phiên bản server khi reproducibility quan trọng.
 
 ### File Upload (RFI)
 
@@ -84,7 +85,8 @@ Ingestion nằm ở repo ngoài — áp dụng security review cho repo ingestio
 
 Project quản lý dependencies qua `uv.lock` — deterministic, reproducible builds.
 Từ v7.1 Docker image **không còn torch/transformers/sentence-transformers/
-FlagEmbedding/CUDA wheels** — embedding/rerank chạy trên HTTP server ngoài.
+CUDA wheels** (trừ khi `RERANK_PROVIDER=bge` — cần FlagEmbedding/torch) —
+embedding/rerank chạy trên HTTP server ngoài.
 
 | Package | Rủi ro | Mitigation |
 |---|---|---|

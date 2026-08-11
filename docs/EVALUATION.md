@@ -1,7 +1,7 @@
-# Đánh Giá — Evaluation Guide (v7.1.0)
+# Đánh Giá — Evaluation Guide (v8.1.0)
 
 > Lưu ý v7.1: `tests/test_rag_deepeval_qwen.py` gọi **API Docker container đang chạy
-> thật** qua HTTP (`httpx` tới `RAG_API_URL` mặc định `http://localhost:8001`), thay
+> thật** qua HTTP (`httpx` tới `RAG_API_URL` mặc định `http://localhost:8005`), thay
 > vì dùng in-process `TestClient`. Lý do:
 > - Tránh tự ý lấy endpoint mặc định / mock embedding — test chỉ pass khi service thật
 >   (Docker + Colab notebook embedding + Qdrant có data) thực sự hoạt động.
@@ -69,12 +69,11 @@ uv run python tests/locate_expected_chunks.py
 ## 4. Run Evaluation
 
 > **Yêu cầu v7.1**: Test gọi `POST /rag/` qua TestClient, route này lại gọi remote
-> BGE-m3 embedding (và optional remote reranker). Trước khi chạy eval, **phải**:
-> 1. Chạy Colab notebook `rag_test_bge_m3_reranker_ngrok.ipynb` (T4 GPU) và lấy
->    ngrok public URL.
-> 2. Set `EMBEDDING_BASE_URL` (và `RERANK_BASE_URL` nếu `RERANK_PROVIDER=remote`)
->    tới URL đó. Nếu không, mọi câu hỏi sẽ fail ở bước embedding (lenient mode vẫn
->    pass test nhưng không có retrieval thật).
+> BGE-m3 embedding (và remote reranker). Trước khi chạy eval, **phải**:
+> 1. Chạy remote embedding server (GPU) và lấy public URL / base URL.
+> 2. Set `EMBEDDING_BASE_URL` (và `RERANK_BASE_URL` nếu `RERANK_PROVIDER=remote`,
+>    mặc định là `remote`) tới URL đó. Nếu không, mọi câu hỏi sẽ fail ở bước
+>    embedding hoặc rerank (fail-fast khi remote không khả dụng).
 > 3. Qdrant collection (`TEST_QDRANT_COLLECTION_NAME`, default `documents`) phải
 >    đã được dựng bởi hệ thống ingestion ngoài và có data (`/readyz` trả 200).
 
@@ -86,9 +85,9 @@ $env:ALLOW_NETWORK_TESTS="1"
 $env:TEST_EVAL_BACKEND="qwen"            # hoặc để trống + set QWEN_EVAL_BASE_URL
 $env:QWEN_EVAL_BASE_URL="http://localhost:8000/v1"
 $env:QWEN_EVAL_MODEL="qwen"
-$env:EMBEDDING_BASE_URL="https://xxxx.ngrok-free.app"   # Colab notebook URL
-$env:RERANK_BASE_URL="https://xxxx.ngrok-free.app"      # nếu RERANK_PROVIDER=remote
-$env:RERANK_PROVIDER="none"                              # hoặc "remote"
+$env:EMBEDDING_BASE_URL="http://localhost:8008"   # remote embed server
+$env:RERANK_BASE_URL="http://localhost:8010"      # remote rerank server
+$env:RERANK_PROVIDER="remote"                     # default "remote"
 
 # Run full eval
 uv run pytest tests/test_rag_deepeval_qwen.py -m qwen -vv
@@ -105,7 +104,7 @@ $env:ALLOW_NETWORK_TESTS="1"
 $env:TEST_EVAL_BACKEND="nvidia"          # hoặc set NVIDIA_API_KEY để auto-detect
 $env:NVIDIA_API_KEY="nvapi-your-key"
 $env:NVIDIA_EVAL_MODEL="meta/llama-3.3-70b-instruct"
-$env:EMBEDDING_BASE_URL="https://xxxx.ngrok-free.app"   # Colab notebook URL
+$env:EMBEDDING_BASE_URL="http://localhost:8008"   # remote embed server
 
 uv run pytest tests/test_rag_deepeval_qwen.py -m qwen -vv
 ```
@@ -133,12 +132,15 @@ QWEN_EVAL_MODEL=qwen
 
 | Env | Default | Mô tả |
 |---|---|---|
-| `RAG_API_URL` | `http://localhost:8001` | Base URL API Docker container (test gọi `POST {RAG_API_URL}/rag/`) |
+| `RAG_API_URL` | `http://localhost:8005` | Base URL API Docker container (test gọi `POST {RAG_API_URL}/rag/`) |
 | `TEST_QDRANT_COLLECTION_NAME` | `documents` | Collection Qdrant để eval |
 | `TEST_LOCATOR_STRICT` | `0` | `1` = fail test khi locator/context mismatch (mặc định lenient) |
 | `TEST_SKIP_DEEPEVAL` | `0` | `1` = bỏ qua metrics DeepEval, chỉ kiểm tra retrieval/locator (nhanh) |
 | `TEST_DEEPEVAL_TOP_K` | `5` | Số top-K context đưa vào `LLMTestCase.retrieval_context` |
 | `TEST_MIN_PASS_RATIO` | `0.7` | Tỷ lệ câu hỏi tối thiểu phải pass để test assert pass (0.0-1.0) |
+
+> `RERANK_MIN_SCORE` (default `0.0`) cũng ảnh hưởng eval: nếu set > 0, documents có
+> score rerank thấp hơn ngưỡng sẽ bị lọc trước khi đưa vào `retrieval_context`.
 
 ## 5. Interpret Results
 

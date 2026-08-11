@@ -1,4 +1,4 @@
-# Runbook Vận Hành — Operations Guide (v7.0.0)
+# Runbook Vận Hành — Operations Guide (v8.1.0)
 
 ## 1. Startup Sequence
 
@@ -8,14 +8,18 @@
 1. [Create network]   docker network create test_network
 2. [Start Qdrant]     docker compose up -d           (qdrant_docker/)
 3. [Ingestion]        Repo ingestion NGOÀI — tao collection + upsert data
-4. [Start API]        docker compose up --build -d   (conversational-agent-langchain/)
-5. [Verify healthz]   curl http://localhost:8001/healthz
-6. [Verify readyz]    curl http://localhost:8001/readyz  # phai 200 ready
+4. [Start Embed]      GPU server embed+rerank (embed :8008, rerank :8010)
+5. [Start API]        docker compose up --build -d   (conversational-agent-langchain/)
+6. [Verify healthz]   curl http://localhost:8005/healthz
+7. [Verify readyz]    curl http://localhost:8005/readyz  # phai 200 ready
 ```
 
 API container **không cần Qdrant ready trước khi start**. Nếu Qdrant down,
 API vẫn start được vì client lazy (chỉ kết nối khi route được gọi). Nếu
 `/readyz` fail, block traffic ở LB layer cho đến khi Qdrant + collection sẵn sàng.
+
+> Embed/rerank server phải up trước khi request `/rag/` (default
+> `RERANK_PROVIDER=remote` fail-fast nếu `RERANK_BASE_URL` không reachable).
 
 ## 2. Common Operations
 
@@ -36,14 +40,14 @@ API vẫn start được vì client lazy (chỉ kết nối khi route được g
 ### Liveness probe (`/healthz`)
 
 ```bash
-curl http://localhost:8001/healthz
+curl http://localhost:8005/healthz
 # 200 {"status":"ok"}    ← process con song
 ```
 
 ### Readiness probe (`/readyz`)
 
 ```bash
-curl http://localhost:8001/readyz
+curl http://localhost:8005/readyz
 # 200 {"status":"ready","collection":"documents"}    ← Qdrant OK + collection ton tai
 # 503 {"status":"fail","reason":"collection_missing","collection":"documents"}
 # 503 {"status":"fail","reason":"qdrant_unreachable","details":"Connection refused"}
@@ -54,7 +58,7 @@ curl http://localhost:8001/readyz
 
 ```
 Using remote BGE-m3 embedding endpoint: <EMBEDDING_BASE_URL>
-Startup: Retrieval & Search API v7.0.0
+Startup: Retrieval & Search API v8.1.0
 Loading REST API Finished.
 ```
 
@@ -111,10 +115,10 @@ Restore: stop Qdrant, replace thư mục `vector_db/` với bản backup, start 
 
 ```bash
 # Process up?
-curl http://localhost:8001/healthz
+curl http://localhost:8005/healthz
 
 # Qdrant + collection ready?
-curl http://localhost:8001/readyz
+curl http://localhost:8005/readyz
 ```
 
 ### Key Metrics:
@@ -130,9 +134,10 @@ curl http://localhost:8001/readyz
 ### Alert Triggers:
 
 - API container restarting (CrashLoopBackOff): check Qdrant connectivity
-- `Connection refused [Errno 111]` in logs: Qdrant down hoặc `QDRANT_URL` sai
+- `Connection refused [Errno 111]` in logs: Qdrant down hoặc `QDRANT_URL` sai; hoặc embed/rerank server (`EMBEDDING_BASE_URL`/`RERANK_BASE_URL`) không reachable
 - `/readyz` liên tục 503: collection chưa tồn tại hoặc Qdrant mất kết nối
-- Embedding/rerank timeout: remote server (`EMBEDDING_BASE_URL`/`RERANK_BASE_URL`) down hoặc ngrok session hết hạn — tăng `EMBEDDING_TIMEOUT`/`RERANK_TIMEOUT` nếu network chậm
+- Embedding/rerank timeout: remote server (`EMBEDDING_BASE_URL`/`RERANK_BASE_URL`) down — tăng `EMBEDDING_TIMEOUT`/`RERANK_TIMEOUT` nếu network chậm
+- `/rag/` 500 khi rerank fail: `RERANK_BASE_URL` sai (fail-fast) — sửa URL hoặc set `RERANK_PROVIDER=none/bge`
 
 ## 7. Capacity Planning
 
@@ -142,15 +147,14 @@ curl http://localhost:8001/readyz
 | RAM per Qdrant | 1-4 GB | Tuỳ số vector |
 | Disk per Qdrant | 100MB - 10GB | Tuỳ dataset |
 | CPU per request | thấp | Embedding/rerank delegate ra HTTP, API chỉ orchestrator |
-| Remote GPU server (Colab ngrok) | ~6-10 GB | Chạy BGE-m3 + (optional) reranker — nằm ngoài Docker image này |
+| Remote GPU server | ~6-10 GB | Chạy BGE-m3 + reranker — nằm ngoài Docker image này |
 
 ## 8. Updating Models
 
 Cập nhật model embedding/rerank (model sống trên remote server, không trong
 Docker image này):
 
-1. Cập nhật remote server (Colab notebook `rag_test_bge_m3_reranker_ngrok.ipynb`
-   hoặc server GPU riêng) để chạy model mới. Lấy URL HTTP/ngrok mới.
+1. Cập nhật remote server (GPU) để chạy model mới. Lấy URL HTTP mới.
 2. Update `.env`:
    ```env
    EMBEDDING_BASE_URL=<new-url-of-server-running-new-model>
@@ -162,8 +166,7 @@ Docker image này):
    docker compose restart
    ```
 4. **Repo ingestion ngoài** cần re-create collection với dense size mới (nếu
-   model mới đổi dim) và re-upsert toàn bộ data. Repo này dense-only, không
-   cần cấu hình sparse named vector.
+   model mới đổi dim) và re-upsert toàn bộ data.
 
 ## 9. Cleanup
 

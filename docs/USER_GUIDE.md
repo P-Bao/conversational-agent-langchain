@@ -1,4 +1,4 @@
-# Hướng Dẫn Sử Dụng API — User Guide (v7.0.0)
+# Hướng Dẫn Sử Dụng API — User Guide (v8.1.0)
 
 > Tài liệu dành cho end-user / caller muốn gọi API retrieval & search.
 
@@ -14,11 +14,15 @@ sắp xếp theo độ relevance, và trả về cho bạn.
 > **Lưu ý v7.0.0:** Các endpoint upload file / tạo collection / xoá document đã
 > được chuyển sang hệ thống ngoài. API chỉ cung cấp retrieval & search.
 
+> **Lưu ý v8.1.0:** Rerank mặc định là **remote** (qua HTTP server) — `score` luôn
+> có nếu remote hoạt động. `top_k` giới hạn 1–40. Bỏ `page`/`source` khỏi response
+> top-level (chỉ còn trong `metadata`).
+
 ## 2. Kết Nối Nhanh
 
 ### Yêu cầu:
 
-- API endpoint URL (ví dụ: `http://rag-api.example.com:8001`)
+- API endpoint URL (ví dụ: `http://rag-api.example.com:8005`)
 - API đã được deploy và chạy
 - Qdrant đã có sẵn collection (do hệ thống ingestion ngoài quản lý)
 
@@ -26,18 +30,18 @@ sắp xếp theo độ relevance, và trả về cho bạn.
 
 ```bash
 # Process còn sống?
-curl http://localhost:8001/healthz
+curl http://localhost:8005/healthz
 # {"status":"ok"}
 
 # Qdrant + collection ready?
-curl http://localhost:8001/readyz
+curl http://localhost:8005/readyz
 # {"status":"ready","collection":"documents"}
 ```
 
 ### Ví dụ Gọi API (cURL):
 
 ```bash
-curl -X POST http://localhost:8001/rag/ \
+curl -X POST http://localhost:8005/rag/ \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
@@ -55,8 +59,6 @@ curl -X POST http://localhost:8001/rag/ \
   "documents": [
     {
       "text": "The attention mechanism allows the model...",
-      "page": 2,
-      "source": "1706.03762v5.pdf",
       "score": 0.89,
       "metadata": {
         "source": "1706.03762v5.pdf",
@@ -76,7 +78,7 @@ curl -X POST http://localhost:8001/rag/ \
 ```python
 import httpx
 
-def get_relevant_docs(query: str, api_url: str = "http://localhost:8001") -> list[dict]:
+def get_relevant_docs(query: str, api_url: str = "http://localhost:8005") -> list[dict]:
     resp = httpx.post(
         f"{api_url}/rag/",
         json={
@@ -90,7 +92,7 @@ def get_relevant_docs(query: str, api_url: str = "http://localhost:8001") -> lis
 
 docs = get_relevant_docs("Cách tính điểm GPA?")
 for doc in docs:
-    print(f"[{doc['score']:.2f}] {doc['source']} (p.{doc['page']})")
+    print(f"[{doc['score']:.2f}] {doc['metadata'].get('source')} (p.{doc['metadata'].get('page')})")
     print(f"  {doc['text'][:150]}...")
     print()
 ```
@@ -98,7 +100,7 @@ for doc in docs:
 ### JavaScript / Node.js:
 
 ```javascript
-const response = await fetch("http://localhost:8001/rag/", {
+const response = await fetch("http://localhost:8005/rag/", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -117,10 +119,10 @@ Mỗi document trong mảng `documents`:
 | Field | Luôn có? | Mô tả |
 |---|---|---|
 | `text` | Yes | Nội dung chunk |
-| `page` | Maybe | Số trang gốc (nếu là PDF) |
-| `source` | Maybe | Tên file hoặc URL nguồn |
-| `score` | Maybe (null nếu no rerank) | Relevance score (0-1) từ reranker hoặc null nếu RERANK_PROVIDER=none |
-| `metadata` | Yes | Object chứa thông tin bổ sung (document_id, global_id, chunk_index...). Dùng cho traceability. |
+| `score` | Maybe (null nếu no rerank) | Relevance score (0-1) từ reranker remote; `null` nếu `RERANK_PROVIDER=none` hoặc rerank lỗi |
+| `metadata` | Yes | Object chứa thông tin bổ sung (document_id, global_id, chunk_index, page, source...). Dùng cho traceability. |
+
+> `page`/`source` chỉ còn trong `metadata` (bỏ khỏi top-level từ v8.1.0).
 
 ## 5. Collection
 
@@ -142,7 +144,7 @@ Nếu muốn hiển thị tiến trình khi retrieval:
 import httpx, json
 
 with httpx.stream(
-    "POST", "http://localhost:8001/rag/stream",
+    "POST", "http://localhost:8005/rag/stream",
     json={"messages": [{"role": "user", "content": query}], "collection_name": "documents"},
     timeout=30,
 ) as resp:
@@ -163,7 +165,7 @@ with httpx.stream(
 Endpoint `/semantic/search` trả về kết quả nhanh hơn (bỏ qua graph pipeline + rerank):
 
 ```bash
-curl -X POST http://localhost:8001/semantic/search \
+curl -X POST http://localhost:8005/semantic/search \
   -H "Content-Type: application/json" \
   -d '{"query": "attention is all you need", "k": 3, "collection_name": "documents"}'
 ```
@@ -177,7 +179,7 @@ Nếu bạn dùng API làm backend cho app, có thể monitor bằng:
 ```python
 def is_api_ready() -> bool:
     try:
-        r = httpx.get("http://localhost:8001/readyz", timeout=5)
+        r = httpx.get("http://localhost:8005/readyz", timeout=5)
         return r.status_code == 200 and r.json().get("status") == "ready"
     except httpx.RequestError:
         return False
@@ -194,17 +196,17 @@ assert is_api_ready(), "RAG API chưa ready — kiểm tra Qdrant + collection"
 | 422 | Validation error (sai schema) | Kiểm tra request body |
 | 500 | Server error | Báo admin, xem log: `docker logs conversational-rag-api --tail 20` |
 | 503 | Readiness fail (chỉ `/readyz`) | Qdrant down hoặc collection missing |
-| Connection refused | API chưa chạy hoặc sai URL | Kiểm tra URL + port |
+| Connection refused | API chưa chạy hoặc sai URL | Kiểm tra URL + port (8005) |
 
 ## 10. FAQs
 
 **Q: Làm sao để biết API đang chạy?**
 
-A: `curl http://localhost:8001/healthz` trả về `{"status":"ok"}`.
+A: `curl http://localhost:8005/healthz` trả về `{"status":"ok"}`.
 
 **Q: Làm sao biết Qdrant + collection ready?**
 
-A: `curl http://localhost:8001/readyz` → 200 + `{"status":"ready", "collection":"..."}`.
+A: `curl http://localhost:8005/readyz` → 200 + `{"status":"ready", "collection":"..."}`.
 
 **Q: Kết quả trả về rỗng?**
 
@@ -213,10 +215,9 @@ ingestion hoặc kiểm tra tại Qdrant dashboard.
 
 **Q: Score cao = document rất phù hợp?**
 
-A: Score từ reranker (BGE-reranker-v2-m3 qua remote server, normalized 0-1).
-Score cao hơn là relevant hơn. Tuy nhiên không phải threshold tuyệt đối — cùng
-query, scores so sánh giữa các documents. Nếu `RERANK_PROVIDER=none`, `score`
-sẽ là `null` (chỉ có raw retrieval score trong metadata nếu có).
+A: Score từ reranker (BGE-reranker qua remote server, normalized 0-1). Score cao hơn
+là relevant hơn. Tuy nhiên không phải threshold tuyệt đối — cùng query, scores so
+sánh giữa các documents. Nếu `RERANK_PROVIDER=none`, `score` sẽ là `null`.
 
 **Q: Tôi muốn upload file PDF của tôi lên hệ thống?**
 

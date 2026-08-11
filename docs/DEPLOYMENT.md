@@ -12,7 +12,10 @@ Hệ thống gồm 2 stack Docker riêng biệt:
     |     (collection do he ngoai quan ly theo quy trinh rieng)
     |
     +-- API Stack (conversational-agent-langchain/)
-    |     container: conversational-rag-api   port: 8001
+    |     container: conversational-rag-api   port: 8005
+    |
+    +-- Embed Server (GPU)                    port: 8008 (embed) / 8010 (rerank)
+    |     BGE-m3 embedding + BGE reranker
     |
     +-- (Optional) Frontend Streamlit — repo riêng
 ```
@@ -63,7 +66,7 @@ services:
     container_name: conversational-rag-api
     restart: unless-stopped
     ports:
-      - "8001:8001"
+      - "8005:8005"
     env_file:
       - .env
     environment:
@@ -71,7 +74,7 @@ services:
       - QDRANT_PORT=${QDRANT_PORT:-6333}
     # Healthcheck dung /healthz (liveness) — process song la OK
     healthcheck:
-      test: ["CMD-SHELL", "uv run python -c \"import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://localhost:8001/healthz',timeout=5).status==200 else 1)\""]
+      test: ["CMD-SHELL", "uv run python -c \"import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://localhost:8005/healthz',timeout=5).status==200 else 1)\""]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -94,10 +97,15 @@ QDRANT_URL=http://qdrant    # DNS name trên network, KHONG phai localhost
 QDRANT_PORT=6333
 QDRANT_COLLECTION_NAME=documents  # collection da ton tai tren Qdrant
 EMBEDDING_PROVIDER=remote
-EMBEDDING_BASE_URL=https://xxxx.ngrok-free.app   # remote BGE-m3 server
-RERANK_PROVIDER=none                              # default — passthrough
-RERANK_BASE_URL=https://xxxx.ngrok-free.app       # chỉ dùng khi RERANK_PROVIDER=remote
+EMBEDDING_BASE_URL=http://host.docker.internal:8008   # remote BGE-m3 embed server
+RERANK_PROVIDER=remote                                # default — remote
+RERANK_BASE_URL=http://host.docker.internal:8010      # remote BGE reranker
+RERANK_MIN_SCORE=0.0                                  # lọc sau rerank
 ```
+
+> Khi API chạy trong Docker mà embed/rerank server chạy trên host (bind
+> `127.0.0.1`), dùng `host.docker.internal` thay vì `localhost` — `localhost`
+> trong container là chính container.
 
 ## 6. Multi-Stack Workflow
 
@@ -116,10 +124,10 @@ cd ../conversational-agent-langchain
 docker compose up --build -d
 
 # 4. Verify healthz
-curl http://localhost:8001/healthz
+curl http://localhost:8005/healthz
 
 # 5. Verify readyz — phải 200 nếu collection đã tồn tại
-curl http://localhost:8001/readyz
+curl http://localhost:8005/readyz
 ```
 
 ### Routine restart:
@@ -150,14 +158,14 @@ docker compose down
 
 | Area | Khuyến nghị |
 |---|---|
-| GPU | API container không cần GPU (embedding/rerank remote). Colab T4 / server GPU riêng giữ model. |
-| Memory | API container ~512MB-1GB RAM (không load model). Remote server giữ BGE-m3 ~2.7GB + reranker ~2.2GB. |
+| GPU | API container không cần GPU (embedding/rerank remote). GPU server riêng giữ model. |
+| Memory | API container ~512MB-1GB RAM (không load model; `bge` local sẽ tải thêm model). Remote server giữ BGE-m3 ~2.7GB + reranker ~2.2GB. |
 | CPU | API container I/O bound (HTTP tới remote + Qdrant). Nếu load cao, scale bằng nhiều container + Qdrant cluster. |
 | Volume | Không còn HF cache volume. Model files nằm trên remote server, không trong API container. |
-| Remote server uptime | Colab ngrok URL hết hạn khi notebook stop. Nếu production, self-host GPU server có fixed URL thay vì Colab. |
+| Remote server uptime | Embed/rerank server phải up khi API nhận traffic (fail-fast nếu `RERANK_PROVIDER=remote` mà không reachable). |
 | Healthcheck | `/healthz` cho liveness (process sống); `/readyz` cho readiness (Qdrant OK + collection tồn tại). |
 | Log rotation | Default driver json-file. Set `logging.driver=json-file` + `max-size=10m` nếu muốn. |
-| Network security | Qdrant port 6333 không expose ra ngoài nếu không cần. API port 8001 sau reverse proxy. |
+| Network security | Qdrant port 6333 không expose ra ngoài nếu không cần. API port 8005 sau reverse proxy. |
 | Ingestion tách riêng | Repo này không ingestion. Đảm bảo quy trình ingestion (repo ngoài) chạy **trước** khi API nhận traffic — `/readyz` giúp phát hiện nhánh nào chưa sẵn sàng. |
 
 ## 8. Healthcheck Config
@@ -166,7 +174,7 @@ docker compose down
 services:
   api:
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/healthz"]
+      test: ["CMD", "curl", "-f", "http://localhost:8005/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -179,7 +187,7 @@ Hoặc dùng readiness probe riêng cho Kubernetes:
 readinessProbe:
   httpGet:
     path: /readyz
-    port: 8001
+    port: 8005
   initialDelaySeconds: 60
   periodSeconds: 10
 ```
@@ -214,13 +222,13 @@ docker ps
 docker network inspect test_network | grep -E "qdrant|conversational"
 
 # Liveness probe
-curl http://localhost:8001/healthz
+curl http://localhost:8005/healthz
 
 # Readiness probe
-curl http://localhost:8001/readyz
+curl http://localhost:8005/readyz
 
 # Deep test: search thử
-curl -X POST http://localhost:8001/rag/ \
+curl -X POST http://localhost:8005/rag/ \
   -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"test query"}],"collection_name":"documents"}'
 ```

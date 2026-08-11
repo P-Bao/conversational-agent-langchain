@@ -1,11 +1,12 @@
-# Bộ Tài Liệu Bàn Giao — Retrieval & Search API v7.0.0
+# Bộ Tài Liệu Bàn Giao — Retrieval & Search API v8.1.0
 
 > **Project**: Retrieval-Only RAG API (FastAPI + Remote BGE-m3 + Qdrant + LangGraph)
 >
 > **Purpose**: API nhận câu hỏi, truy xuất document chunks liên quan nhất từ Qdrant
-> bằng dense search (gọi remote BGE-m3 qua HTTP) và (tuỳ chọn) remote reranker,
-> trả về danh sách documents cho downstream LLM. Collection / embedding / delete
-> thuộc về hệ thống quản lý Qdrant bên ngoài — repo này **chỉ retrieval & search**.
+> bằng hybrid search (dense + sparse, gọi remote BGE-m3 qua HTTP) và remote
+> reranker (default), trả về danh sách documents cho downstream LLM. Collection /
+> embedding / delete thuộc về hệ thống quản lý Qdrant bên ngoài — repo này
+> **chỉ retrieval & search**.
 
 ## Mục Lục Tài Liệu
 
@@ -65,13 +66,15 @@
 | "Deploy lên Docker" | [DEPLOYMENT.md](DEPLOYMENT.md) |
 | "Đổi reranker default" | [CONFIGURATION.md](CONFIGURATION.md) §3 |
 
-## Lưu Ý Quan Trọng (v7.0.0)
+## Lưu Ý Quan Trọng (v8.1.0)
 
 1. **Ingestion tách khỏi retrieval.** Các endpoint `/collection/create`,
    `/embeddings/documents`, `/embeddings/string`, `/embeddings/delete` đã
    được **loại bỏ khỏi repo này** — thuộc về hệ thống ngoài quản lý Qdrant.
 2. **Migration Mongo dump → Qdrant (`migrate_dump_to_qdrant.py`) đã được
    loại bỏ** — thuộc về repo ingestion ngoài.
-3. **Default reranker = `none`** (passthrough). Bật remote reranker qua
-   `RERANK_PROVIDER=remote` (cần `RERANK_BASE_URL` trỏ tới server chạy BGE-reranker).
+3. **Default reranker = `remote`** (HTTP server). Cần `RERANK_BASE_URL` trỏ tới
+   server chạy BGE-reranker; lọc theo `RERANK_MIN_SCORE`. Alternatives: `bge`
+   (local FlagEmbedding), `none` (passthrough).
 4. **Health check**: `/healthz` (liveness) + `/readyz` (Qdrant connectivity).
+5. **Retrieval hybrid** (dense + sparse fusion) từ remote BGE-m3; `top_k` 1-40.

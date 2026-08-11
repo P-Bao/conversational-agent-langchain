@@ -1,4 +1,4 @@
-# Kiến trúc Hệ thống — Retrieval & Search API v7.0.0
+# Kiến trúc Hệ thống — Retrieval & Search API v8.1.0
 
 ## 1. Tổng Quan
 
@@ -14,22 +14,24 @@ endpoint nào trong repo này để tạo collection, upload file, hay xoá docu
 Caller / Client
     |
     v
-Retrieval & Search API (FastAPI :8001)
+Retrieval & Search API (FastAPI :8005)
     |
     +-- GET  /healthz               (liveness)
     +-- GET  /readyz                (Qdrant connectivity + collection exists)
     |
-    +-- POST /semantic/search       (direct dense search, no rerank)
-    +-- POST /rag/                  (LangGraph: dense retrieval + optional rerank)
+    +-- POST /semantic/search       (direct hybrid search, no rerank)
+    +-- POST /rag/                  (LangGraph: hybrid retrieval + rerank)
     +-- POST /rag/stream            (NDJSON stream của /rag/)
     |
-    +-- HTTP --> Remote BGE-m3 Embed Server (Colab ngrok / GPU server)
-    |                POST /embed  ->  {"dense_vecs": [[float,...],...]}
+    +-- HTTP --> Remote BGE-m3 Embed Server (GPU server, default :8008)
+    |                POST /embed  ->  {"dense_vecs": [[float,...],...],
+    |                                  "sparse_vecs": [...]}
     |                                v
-    |   Qdrant (Dense Search, RetrievalMode.DENSE)  <-- collection do he ngoai dung
+    |   Qdrant (Hybrid Search, dense + sparse fusion)  <-- collection do he ngoai dung
     |                                |
-    +-- HTTP --> Remote Reranker Server (optional, default = none)
-    |                POST /rerank ->  {"results": [{"index":int,"score":float},...]}
+    +-- HTTP --> Remote Reranker Server (default = remote)
+    |                POST /rerank ->  {"scores": [float,...],
+    |                                  "ranked_indices": [int,...]}
     |
     v
 JSON: RetrievalResponse(query, documents[])
@@ -41,8 +43,8 @@ JSON: RetrievalResponse(query, documents[])
 
 | Route Module | Endpoint | Mô tả |
 |---|---|---|
-| `rag.py` | `POST /rag/`, `POST /rag/stream` | Dense retrieval qua LangGraph + optional rerank |
-| `search.py` | `POST /semantic/search` | Direct dense search, không rerank, không graph |
+| `rag.py` | `POST /rag/`, `POST /rag/stream` | Hybrid retrieval qua LangGraph + rerank |
+| `search.py` | `POST /semantic/search` | Direct hybrid search, không rerank, không graph |
 | `health.py` | `GET /healthz`, `GET /readyz` | Liveness + readiness (Qdrant connectivity) |
 
 ### 2.2 Data Models (`src/agent/data_model/`)
@@ -58,10 +60,10 @@ JSON: RetrievalResponse(query, documents[])
 
 ### 2.4 Utilities (`src/agent/utils/`)
 
-- `config.py` — Pydantic Settings, đọc từ `.env`. Embedding/rerank provider mặc định `remote` / `none`.
-- `embeddings.py` — `BGEM3RemoteEmbeddings` (dense), gọi HTTP `POST /embed` tới `EMBEDDING_BASE_URL`. Xem `embeddings.py:29`.
-- `retriever.py` — Dense retriever wrapper (`RetrievalMode.DENSE`), cache `QdrantVectorStore` theo `collection_name`. Không còn hybrid/fusion.
-- `reranker.py` — `get_reranker(cfg, *, top_k=...)` với 2 providers: `none` (passthrough) và `remote` (HTTP `POST /rerank` tới `RERANK_BASE_URL`). `bge` local đã loại bỏ. Xem `reranker.py:62`.
+- `config.py` — Pydantic Settings, đọc từ `.env`. Embedding provider mặc định `remote`; rerank provider mặc định `remote`.
+- `embeddings.py` — `BGEM3RemoteEmbeddings` (dense + sparse), gọi HTTP `POST /embed` tới `EMBEDDING_BASE_URL`. Xem `embeddings.py:29`.
+- `retriever.py` — Hybrid retriever wrapper (dense + sparse fusion), cache `QdrantVectorStore` theo `collection_name`.
+- `reranker.py` — `get_reranker(cfg, *, top_k=...)` với 3 providers: `none` (passthrough), `remote` (HTTP `POST /rerank` tới `RERANK_BASE_URL`), `bge` (local FlagEmbedding, fallback). Default `remote`. Xem `reranker.py:62`.
 - `vdb.py` — Chỉ `QdrantClient` + `AsyncQdrantClient` singleton. CRUD collection / embed / init vdb đã chuyển sang hệ ngoài.
 
 ## 3. Data Flow Chi Tiết
@@ -73,9 +75,10 @@ POST /rag/  body: { "messages": [...], "collection_name": "..." }
   1. RAGRequest -> graph.with_config({"metadata": {"collection_name": ...}}).ainvoke(...)
   2. LangGraph chạy "retriever" node
   3. nodes/retrieval.py :: retrieve_documents -> get_retriever(collection_name, k)
-  4. retriever.invoke(query) -> Qdrant dense search (RetrievalMode.DENSE, remote BGE-m3 embed)
-  5. Nếu Config.rerank_provider != "none": get_reranker(cfg, top_k=...) -> remote rerank
-  6. Trả về RetrievalResponse(query, documents[])
+  4. retriever.invoke(query) -> Qdrant hybrid search (dense + sparse fusion, remote BGE-m3 embed)
+  5. get_reranker(cfg, top_k=...) -> remote rerank (provider=remote), ghi score vào metadata
+  6. Lọc theo RERANK_MIN_SCORE; clamp top_k bởi min(top_k, k)
+  7. Trả về RetrievalResponse(query, documents[])
 ```
 
 ### Flow B: `/semantic/search` (Direct search, không rerank)
@@ -84,7 +87,7 @@ POST /rag/  body: { "messages": [...], "collection_name": "..." }
 POST /semantic/search  body: { "query": "...", "k": N, "collection_name": "..." }
   1. SearchParams -> get_retriever(collection_name, k)
   2. await retriever.ainvoke(query)
-  3. Trả về SearchResponse[] (text, page, source)
+  3. Trả về SearchResponse[] (text, score, metadata)
 ```
 
 ### Flow C: Health check
@@ -105,15 +108,17 @@ GET /readyz  -> 200 {"status": "ready", "collection": "default"} (Qdrant OK + co
 | Retrieval-only (không LLM sinh answer) | Backend pure context provider; downstream LLM tự xử lý response. Giảm tài nguyên GPU local. |
 | Tách retrieval khỏi collection management | Repo này chỉ đọc Qdrant đã có sẵn; ingestion / CRUD thuộc hệ ngoài tránh duplicate responsibility. |
 | Remote BGE-m3 thay vì local | Docker image nhẹ, không tải model ~2.7GB, không phụ thuộc CUDA/torch wheels. Model chạy trên Colab T4 / server GPU riêng qua HTTP. |
-| Dense-only (`RetrievalMode.DENSE`) | Remote endpoint chỉ trả dense vecs. Bỏ sparse/hybrid/RRF/DBSF — đơn giản hoá retrieval, giảm latency. |
-| `EMBEDDING_BASE_URL` bắt buộc | Là base URL của remote server (Colab ngrok / self-hosted). Không có default;.env phải điền. |
-| Reranker default = `"none"` | Passthrough nếu không cần precision; bật `RERANK_PROVIDER=remote` + `RERANK_BASE_URL` để dùng remote BGE-reranker. |
+| Hybrid search (dense + sparse fusion) | Remote embed server trả cả `dense_vecs` lẫn `sparse_vecs`; fusion nâng recall so với dense-only. |
+| `EMBEDDING_BASE_URL` bắt buộc | Là base URL của remote server (GPU self-hosted). Không có default;.env phải điền. |
+| Reranker default = `"remote"` | Default dùng remote BGE-reranker qua `RERANK_BASE_URL`; đặt `none` nếu muốn passthrough; `bge` giữ làm fallback local. |
+| `RERANK_MIN_SCORE` lọc sau rerank | Chỉ giữ documents có score ≥ ngưỡng; default `0.0` (giữ tất cả). |
+| Fail-fast khi rerank remote lỗi | Không tự fallback sang local `bge` khi remote fail — tránh silent behavior change; lỗi hiện rõ trong log. |
 | LangGraph giữ nguyên | Đảm bảo tương thích với downstream consumers; chỉ rút gọn module xung quanh. |
 
 ## 5. Biểu Đồ Thành Phần
 
 ```
-Docker (api:8001)
+Docker (api:8005)
     |
     +-- /src/agent/ --> FastAPI app
     |       |-- routes/       endpoint handlers (rag, search, health)

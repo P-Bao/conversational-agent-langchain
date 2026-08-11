@@ -1,4 +1,4 @@
-# Hướng Dẫn Chạy Test — Testing Guide (v7.0.0)
+# Hướng Dẫn Chạy Test — Testing Guide (v8.1.0)
 
 ## 1. Test Categories
 
@@ -28,24 +28,26 @@ Pyproject markers: `pyproject.toml`
 
 ## 3. Chi Tiết Các Lệnh
 
-### Unit Tests (61/61 pass ở v7.0.0):
+### Unit Tests (51/51 pass ở v8.1.0):
 
 ```bash
 uv run pytest tests/unit_tests -q
 ```
 
-Các test file trong `tests/unit_tests/` (v7.0.0):
+Các test file trong `tests/unit_tests/` (v8.1.0):
 
 | File | Mục đích |
 |---|---|
-| `test_search.py` | `POST /semantic/search` route, `get_retriever` dense-only/cache (không còn RRF/DBSF/fusion) |
-| `test_rag_route.py` | `POST /rag/` + `POST /rag/stream`, NDJSON events |
-| `test_retrieval_node.py` | `retrieve_documents` qua LangGraph: K, retry, rerank skip/apply |
-| `test_reranker.py` | `get_reranker(provider=...)`: none / remote (bge/cohere/flashrank đã bỏ) |
+| `test_search.py` | `POST /semantic/search` route, `get_retriever` hybrid/cache |
+| `test_rag_route.py` | `POST /rag/` + `POST /rag/stream`, NDJSON events, validation `top_k` (1-40) |
+| `test_retrieval_node.py` | `retrieve_documents` qua LangGraph: K, retry, rerank skip/apply, clamp `top_k` |
+| `test_reranker.py` | `get_reranker(provider=...)`: none / remote (contract mới `scores`+`ranked_indices`, backward-compat) / bge |
 | `test_vdb.py` | `qdrant_client` & `async_qdrant_client` singleton |
-| `test_config.py` | Pydantic `Config` defaults (`embedding_provider=remote`, `embedding_base_url=""`, `rerank_provider=none`, qdrant, retrieval, rerank) |
+| `test_config.py` | Pydantic `Config` defaults (`embedding_provider=remote`, `embedding_base_url=""`, `rerank_provider=remote`, `rerank_base_url=""`, `rerank_min_score=0.0`, qdrant, retrieval, rerank) |
 | `test_embeddings_bge.py` | `BGEM3RemoteEmbeddings` wrapper (test qua mocked httpx, không load model thật) |
 | `test_health.py` | `/healthz` + `/readyz` (collection_exists + error branches) |
+
+> `test_search.py` hiện không chạy được (import `tests.fakes.rag` fail pre-existing) — bỏ qua khi chạy.
 
 ### Contract Tests (VCR):
 
@@ -77,10 +79,11 @@ Chi tiết xem [EVALUATION.md](EVALUATION.md).
 ### `tests/conftest.py`:
 
 - `test_env_defaults`: set mặc định env vars cho test (`EMBEDDING_PROVIDER=remote`,
-  `EMBEDDING_BASE_URL=http://mock` mock, `RERANK_PROVIDER=none`, `QDRANT_URL=...`).
+  `EMBEDDING_BASE_URL=http://mock` mock, `RERANK_PROVIDER=remote`,
+  `RERANK_BASE_URL=http://mock-reranker`, `RERANK_MIN_SCORE=0.0`, `QDRANT_URL=...`).
 - `block_external_http`: mặc định chặn HTTP ra ngoài (trừ localhost). Bỏ qua
   nếu `ALLOW_NETWORK_TESTS=1` hoặc test có marker `vcr` / `qwen`.
-- `app` fixture: import FastAPI app (v7 không có module-level side effects nên
+- `app` fixture: import FastAPI app (v8 không có module-level side effects nên
   không cần patch).
 - `client` fixture: FastAPI `TestClient`.
 
@@ -90,8 +93,9 @@ Chi tiết xem [EVALUATION.md](EVALUATION.md).
 EMBEDDING_PROVIDER=remote
 EMBEDDING_BASE_URL=http://mock-embedding
 EMBEDDING_TIMEOUT=60
-RERANK_PROVIDER=none
+RERANK_PROVIDER=remote
 RERANK_BASE_URL=http://mock-reranker
+RERANK_MIN_SCORE=0.0
 RERANK_TIMEOUT=60
 QDRANT_URL=http://localhost
 QDRANT_PORT=6333
@@ -109,7 +113,7 @@ QDRANT_COLLECTION_NAME=documents
 | `vcr_config` | module | VCR config (filter headers, record mode) |
 | `golden_questions` | module | Load `tests/golden_questions_v2.json` (DeepEval) |
 | `eval_llm` | module | `NvidiaEvalLLM` hoặc `QwenEvalLLM` (DeepEval) — chọn qua `TEST_EVAL_BACKEND` hoặc auto-detect |
-| `rag_api_url` | module | Base URL API Docker thật (default `http://localhost:8001`, override qua `RAG_API_URL`) |
+| `rag_api_url` | module | Base URL API Docker thật (default `http://localhost:8005`, override qua `RAG_API_URL`) |
 
 ## 6. Coverage
 

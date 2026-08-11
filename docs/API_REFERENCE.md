@@ -1,7 +1,7 @@
-# API Reference — Retrieval & Search API v7.0.0
+# API Reference — Retrieval & Search API v8.1.0
 
-> Base URL: `http://localhost:8001`
-> OpenAPI: `http://localhost:8001/docs` (Swagger UI)
+> Base URL: `http://localhost:8005`
+> OpenAPI: `http://localhost:8005/docs` (Swagger UI)
 >
 > Repo chỉ retrieval & search. Collection / embedding / delete thuộc hệ thống
 > ngoài (xem [DATA_INGESTION.md](DATA_INGESTION.md)).
@@ -51,7 +51,7 @@ Kiểm tra Qdrant có sẵn sàng + collection đang khai báo tồn tại.
 ## 4. POST `/rag/` — Retrieval Query
 
 Lấy danh sách document chunks liên quan đến query. Không sinh câu trả lời.
-Pipeline: LangGraph (`retriever` node) -> dense retrieval (remote BGE-m3) -> optional rerank.
+Pipeline: LangGraph (`retriever` node) -> hybrid dense+sparse retrieval (remote BGE-m3) -> optional rerank.
 
 **Request Body** (`RAGRequest`):
 
@@ -60,9 +60,12 @@ Pipeline: LangGraph (`retriever` node) -> dense retrieval (remote BGE-m3) -> opt
   "messages": [
     { "role": "user", "content": "Thế nào là attention trong Transformer?" }
   ],
-  "collection_name": "documents"
+  "collection_name": "documents",
+  "top_k": 5
 }
 ```
+
+- `top_k` (optional, `ge=1`, `le=40`): số doc trả về sau rerank. Falls back to `RERANK_TOP_K` config khi omitted; clamp thêm về `min(top_k, k)` (số doc retrieve được).
 
 **Response** (200, `RetrievalResponse`):
 
@@ -72,30 +75,31 @@ Pipeline: LangGraph (`retriever` node) -> dense retrieval (remote BGE-m3) -> opt
   "documents": [
     {
       "text": "The attention mechanism allows the model to focus on relevant parts...",
-      "page": 2,
-      "source": "1706.03762v5.pdf",
       "score": 0.89,
       "metadata": {
         "page": 2,
         "source": "1706.03762v5.pdf",
         "document_id": "abc123",
         "chunk_index": 5,
-        "global_id": "550e8400-e29b-41d4-a716-446655400000"
+        "global_id": "550e8400-e29b-41d4-a716-446655440000"
       }
     }
   ]
 }
 ```
 
+> `page`/`source` đã bỏ khỏi top-level response (v8.0). Vẫn có trong `metadata`.
+
 Khi `RERANK_PROVIDER=none` thì `score` có thể `null` (chỉ retrieval thuần).
-Khi `RERANK_PROVIDER=remote` thì `score` là rerank score đã chuẩn hoá về [0, 1].
+Khi `RERANK_PROVIDER=remote` thì `score` là rerank score đã chuẩn hoá về [0, 1] từ rerank-server `:8010`.
+Khi `RERANK_PROVIDER=remote` mà server lỗi/timeout → fail-fast (HTTP 500, không tự động fallback).
 
 **Curl example**:
 
 ```bash
-curl -X POST http://localhost:8001/rag/ \
+curl -X POST http://localhost:8005/rag/ \
   -H "Content-Type: application/json" \
-  -d '{"messages": [{"role": "user", "content": "What is attention?"}], "collection_name": "documents"}'
+  -d '{"messages": [{"role": "user", "content": "What is attention?"}], "top_k": 5}'
 ```
 
 **Python example**:
@@ -103,9 +107,9 @@ curl -X POST http://localhost:8001/rag/ \
 ```python
 import httpx
 
-resp = httpx.post("http://localhost:8001/rag/", json={
+resp = httpx.post("http://localhost:8005/rag/", json={
     "messages": [{"role": "user", "content": "What is attention?"}],
-    "collection_name": "documents",
+    "top_k": 5,
 })
 data = resp.json()
 for doc in data["documents"]:
@@ -134,7 +138,7 @@ Stream kết quả retrieval dạng NDJSON. Client đọc từng dòng.
 import httpx, json
 
 async with httpx.AsyncClient() as client:
-    async with client.stream("POST", "http://localhost:8001/rag/stream",
+    async with client.stream("POST", "http://localhost:8005/rag/stream",
         json={"messages": [{"role": "user", "content": "test"}]}) as resp:
         async for line in resp.aiter_lines():
             event = json.loads(line)
@@ -144,7 +148,7 @@ async with httpx.AsyncClient() as client:
 
 ## 6. POST `/semantic/search` — Direct Semantic Search
 
-Tìm kiếm trực tiếp dense search, không qua graph pipeline (không rerank,
+Tìm kiếm trực tiếp hybrid dense+sparse search, không qua graph pipeline (không rerank,
 không graph). Phù hợp khi cần kết quả nhanh.
 
 **Request Body** (`SearchParams`):
@@ -162,9 +166,7 @@ không graph). Phù hợp khi cần kết quả nhanh.
 ```json
 [
   {
-    "text": "The attention mechanism...",
-    "page": 2,
-    "source": "1706.03762v5.pdf"
+    "text": "The attention mechanism..."
   }
 ]
 ```
@@ -181,7 +183,7 @@ Khi không có document nào, trả về:
 | GET | `/` | — | plain text | Welcome |
 | GET | `/healthz` | — | `{status: ok}` | Liveness probe |
 | GET | `/readyz` | — | `{status, collection}` hoặc `{status, reason}` | Readiness probe (Qdrant + collection) |
-| POST | `/rag/` | `RAGRequest` | `RetrievalResponse` | Dense retrieval (remote BGE-m3) + optional rerank (LangGraph) |
+| POST | `/rag/` | `RAGRequest` | `RetrievalResponse` | Hybrid dense+sparse retrieval (remote BGE-m3) + optional rerank (LangGraph) |
 | POST | `/rag/stream` | `RAGRequest` | NDJSON stream | Streaming retrieval |
 | POST | `/semantic/search` | `SearchParams` | `SearchResponse[]` | Direct dense search (no rerank) |
 
