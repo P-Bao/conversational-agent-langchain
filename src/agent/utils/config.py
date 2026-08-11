@@ -8,8 +8,9 @@ class Config(BaseSettings):
     """Loading the settings with pydantic.
 
     Retrieval-only configuration. Embedding is delegated to remote HTTP
-    endpoint (embedding-server). Reranker runs locally using BGE-reranker-v2-m3
-    (FlagEmbedding). Eval LLM (DeepEval) has separate config in test scope.
+    endpoint (embedding-server). Reranker mặc định gọi remote qua HTTP
+    (server ``:8010``); ``bge`` local (FlagEmbedding) chỉ còn là fallback.
+    Eval LLM (DeepEval) has separate config in test scope.
     """
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -32,8 +33,14 @@ class Config(BaseSettings):
         validation_alias=AliasChoices("qdrant_collection", "QDRANT_COLLECTION", "qdrant_collection_name"),
     )
 
-    # === Reranker (local BGE-reranker-v2-m3 via FlagEmbedding) ===
-    rerank_provider: str = "bge"
+    # === Reranker (remote BGE-reranker-v2-m3 qua HTTP server :8010 — default;
+    #     ``bge`` local FlagEmbedding giữ làm fallback, cần GPU) ===
+    rerank_provider: str = "remote"
+    rerank_base_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("rerank_base_url", "RERANK_BASE_URL", "AU_RERANK_BASE_URL"),
+    )
+    rerank_min_score: float = 0.0
     rerank_model: str = Field(
         default="BAAI/bge-reranker-v2-m3",
         validation_alias=AliasChoices("rerank_model", "RERANK_MODEL", "AU_RERANK_MODEL_NAME"),

@@ -41,7 +41,9 @@ class RAGRequest(BaseModel):
     top_k: int | None = Field(
         default=None,
         title="Top K",
-        description="Number of documents to return after reranking. Falls back to the server-side ``RERANK_TOP_K`` config when omitted.",
+        ge=1,
+        le=40,
+        description="Number of documents to return after reranking (1-40). Falls back to the server-side ``RERANK_TOP_K`` config when omitted; clamped against the number of retrieved documents (``RETRIEVAL_K``).",
     )
 
 

@@ -1,8 +1,15 @@
 """Optional reranker utilities (BGE-reranker-v2-m3).
 
-Supports two modes:
-- ``bge`` (default): run locally via ``FlagEmbedding.FlagReranker``.
-- ``remote``: delegate to HTTP endpoint (legacy Colab ngrok server).
+Supports three modes:
+- ``remote`` (default): delegate tới HTTP rerank server (``RERANK_BASE_URL``,
+  vd ``http://127.0.0.1:8010``). Contract mới:
+    POST {base_url}/rerank
+        body: {"query", "documents": [str], "top_k": int, "min_score": float}
+        resp: {"scores": [float, ...], "ranked_indices": [int, ...]}
+  ``scores`` là điểm (đã normalize 0-1) theo thứ tự input documents;
+  ``ranked_indices`` là index đã sort giảm dần, áp ``top_k`` + ``min_score``.
+  Có fallback tương thích ngược với contract cũ ``{"results": [{index, score}]}``.
+- ``bge`` (fallback): run locally via ``FlagEmbedding.FlagReranker`` (cần GPU).
 - ``none``: passthrough (truncate to top_k).
 
 Local BGE reranker loads model on first use and caches it in memory.
@@ -81,9 +88,19 @@ def rerank_with_remote(
     *,
     top_k: int,
     base_url: str,
+    min_score: float = 0.0,
     timeout: float = _REMOTE_TIMEOUT,
 ) -> list[Document]:
-    """Rerank documents by remote /rerank endpoint (legacy Colab ngrok server)."""
+    """Rerank documents by remote /rerank endpoint (rerank server, vd :8010).
+
+    Contract mới (ưu tiên):
+        resp: {"scores": [float, ...], "ranked_indices": [int, ...]}
+    ``scores`` theo thứ tự input documents; ``ranked_indices`` đã sort giảm dần
+    + áp ``top_k`` + ``min_score`` (server-side filter).
+    Fallback tương thích ngược contract cũ: ``{"results": [{"index","score"}]}``.
+
+    Fail-fast: lỗi HTTP/timeout được raise (không auto-fallback sang local).
+    """
     if not documents:
         return documents
     if top_k <= 0 or len(documents) <= top_k:
@@ -96,24 +113,36 @@ def rerank_with_remote(
         "query": query,
         "documents": [d.page_content for d in documents],
         "top_k": top_k,
-        "normalize": True,
+        "min_score": min_score,
     }
     with httpx.Client(timeout=timeout) as client:
         r = client.post(url, json=payload)
         r.raise_for_status()
         data = r.json()
 
-    results = data.get("results", [])
+    # Build index → score map, ưu tiên contract mới {"scores", "ranked_indices"}
+    scores: list[float] = data.get("scores") or []
+    indices = data.get("ranked_indices")
+    if indices is None:
+        # Fallback contract cũ {"results": [{"index", "score"}]}
+        results = data.get("results", [])
+        indices = [it.get("index") for it in results]
+        scores_map: dict[int, float | None] = {
+            it.get("index"): it.get("score") for it in results
+        }
+    else:
+        scores_map = {i: scores[i] for i in range(min(len(scores), len(documents)))}
+
     ranked: list[Document] = []
-    for item in results:
-        idx = item.get("index")
+    for idx in indices:
         if idx is None or not (0 <= idx < len(documents)):
             continue
         doc = documents[idx]
         if doc.metadata is None:
             doc.metadata = {}
-        if item.get("score") is not None:
-            doc.metadata["score"] = float(item["score"])
+        s = scores_map.get(idx)
+        if s is not None:
+            doc.metadata["score"] = float(s)
         ranked.append(doc)
     logger.info(f"Remote reranked {len(documents)} documents to top {len(ranked)}")
     return ranked
@@ -127,28 +156,32 @@ def get_reranker(
     """Return a reranking callable for the provider in cfg.
 
     Providers:
-    - ``bge`` (default): local FlagEmbedding.FlagReranker (BAAI/bge-reranker-v2-m3).
-    - ``remote``: HTTP to ``RERANK_BASE_URL`` (legacy Colab ngrok).
+    - ``remote`` (default): HTTP tới ``RERANK_BASE_URL`` (rerank server, vd :8010).
+      Fail-fast — không tự động fallback sang local khi server lỗi.
+    - ``bge`` (fallback): local FlagEmbedding.FlagReranker (BAAI/bge-reranker-v2-m3).
     - ``none``: passthrough (truncate to top_k).
     """
     normalized = (cfg.rerank_provider or "none").strip().lower()
     k = top_k if top_k is not None else cfg.rerank_top_k
     model_name = cfg.rerank_model
 
-    if normalized == "bge":
-        def local_rerank(docs: list[Document], query: str) -> list[Document]:
-            return rerank_with_bge(docs, query, top_k=k, model_name=model_name)
-        return local_rerank
-
     if normalized == "remote":
         base_url = cfg.rerank_base_url
         if not base_url:
             msg = "RERANK_BASE_URL is required when RERANK_PROVIDER=remote."
             raise ValueError(msg)
+        min_score = cfg.rerank_min_score
 
         def remote_rerank(docs: list[Document], query: str) -> list[Document]:
-            return rerank_with_remote(docs, query, top_k=k, base_url=base_url)
+            return rerank_with_remote(
+                docs, query, top_k=k, base_url=base_url, min_score=min_score
+            )
         return remote_rerank
+
+    if normalized == "bge":
+        def local_rerank(docs: list[Document], query: str) -> list[Document]:
+            return rerank_with_bge(docs, query, top_k=k, model_name=model_name)
+        return local_rerank
 
     if normalized == "none":
         def passthrough(docs: list[Document], _query: str) -> list[Document]:
