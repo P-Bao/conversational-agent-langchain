@@ -37,7 +37,7 @@
 |---|---|---|---|
 | `RERANK_PROVIDER` | — | `remote` | **`remote`** = HTTP tới `RERANK_BASE_URL` (rerank-server :8010); **`bge`** = local FlagEmbedding fallback (cần GPU); **`none`** = passthrough `docs[:top_k]`. |
 | `RERANK_BASE_URL` | `AU_RERANK_BASE_URL` | `""` | Base URL của rerank server (vd `http://127.0.0.1:8010`). **Bắt buộc** khi `RERANK_PROVIDER=remote`. |
-| `RERANK_MIN_SCORE` | — | `0.0` | Ngưỡng server-side lọc doc theo score (gửi qua payload `min_score`). |
+| `RERANK_MIN_SCORE` | — | `0.0` | Ngưỡng lọc doc theo score (gửi qua payload `min_score` **chỉ khi > 0**). `0.0` = giữ tất cả (không gửi — tránh loại doc có raw logit âm). |
 | `RERANK_TOP_K` | — | `5` | Số document giữ lại sau rerank (fallback khi client không gửi `top_k`). |
 | `RERANK_MODEL` | `AU_RERANK_MODEL_NAME` | `BAAI/bge-reranker-v2-m3` | Model cho fallback `bge` local. |
 | `RERANK_TIMEOUT` | — | `60` | Timeout (giây) khi gọi remote `/rerank` endpoint. |

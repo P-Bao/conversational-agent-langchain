@@ -113,8 +113,11 @@ def rerank_with_remote(
         "query": query,
         "documents": [d.page_content for d in documents],
         "top_k": top_k,
-        "min_score": min_score,
     }
+    # Chỉ gửi min_score khi > 0. Server filter "scores >= min_score"; với default
+    # 0.0 mà gửi đi sẽ loại mọi doc có logit âm (BGE-reranker raw logits) → rỗng.
+    if min_score and min_score > 0:
+        payload["min_score"] = min_score
     with httpx.Client(timeout=timeout) as client:
         r = client.post(url, json=payload)
         r.raise_for_status()
