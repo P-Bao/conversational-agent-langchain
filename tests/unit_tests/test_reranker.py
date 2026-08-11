@@ -14,7 +14,6 @@ def _cfg(provider: str = "none", top_k: int = 3) -> MagicMock:
         rerank_top_k=top_k,
         rerank_model="BAAI/bge-reranker-v2-m3",
         rerank_base_url="http://rerank-server",
-        rerank_min_score=0.0,
     )
 
 
@@ -129,7 +128,7 @@ def test_rerank_with_remote_writes_scores_to_metadata(monkeypatch) -> None:
         Document(page_content="b"),
     ]
 
-    result = rerank_with_remote(docs, "q", top_k=2, base_url="http://x", min_score=0.0, timeout=5)
+    result = rerank_with_remote(docs, "q", top_k=2, base_url="http://x", timeout=5)
 
     assert [d.page_content for d in result] == ["b", "a"]
     assert result[0].metadata["score"] == pytest.approx(0.95)
@@ -170,15 +169,15 @@ def test_rerank_with_remote_skips_indexes_out_of_range(monkeypatch) -> None:
 
     docs = [Document(page_content="a"), Document(page_content="b")]
 
-    result = rerank_with_remote(docs, "q", top_k=2, base_url="http://x", min_score=0.0, timeout=5)
+    result = rerank_with_remote(docs, "q", top_k=2, base_url="http://x", timeout=5)
 
     # Only index 1 valid; out-of-range 5 dropped.
     assert [d.page_content for d in result] == ["b"]
     assert result[0].metadata["score"] == pytest.approx(0.4)
 
 
-def test_rerank_with_remote_forwards_min_score_and_top_k(monkeypatch) -> None:
-    """Payload gửi server chứa ``min_score`` + ``top_k`` theo cfg."""
+def test_rerank_with_remote_forwards_top_k(monkeypatch) -> None:
+    """Payload gửi server chứa ``top_k`` + query + documents (không min_score)."""
     from agent.utils.reranker import rerank_with_remote
 
     fake_response = MagicMock()
@@ -208,15 +207,46 @@ def test_rerank_with_remote_forwards_min_score_and_top_k(monkeypatch) -> None:
     monkeypatch.setattr(httpx, "Client", FakeClient)
 
     docs = [Document(page_content="a"), Document(page_content="b"), Document(page_content="c")]
-    rerank_with_remote(
-        docs, "q", top_k=3, base_url="http://x", min_score=0.1, timeout=5
-    )
+    rerank_with_remote(docs, "q", top_k=3, base_url="http://x", timeout=5)
 
-    assert captured["payload"]["min_score"] == 0.1
+    assert "min_score" not in captured["payload"]
     assert captured["payload"]["top_k"] == 3
     assert "normalize" not in captured["payload"]
     assert captured["payload"]["query"] == "q"
     assert captured["payload"]["documents"] == ["a", "b", "c"]
+
+
+def test_rerank_with_remote_accepts_negative_scores(monkeypatch) -> None:
+    """Scores âm (BGE-reranker raw logits) không bị client lọc — server quyết định."""
+    from agent.utils.reranker import rerank_with_remote
+
+    fake_response = MagicMock()
+    fake_response.raise_for_status = MagicMock()
+    fake_response.json = MagicMock(
+        return_value={"scores": [-0.5, -1.2, 0.3], "ranked_indices": [2, 0, 1]}
+    )
+
+    import httpx
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def post(self, *_args, **_kwargs):
+            return fake_response
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    docs = [Document(page_content="a"), Document(page_content="b"), Document(page_content="c")]
+    result = rerank_with_remote(docs, "q", top_k=3, base_url="http://x", timeout=5)
+
+    assert [d.page_content for d in result] == ["c", "a", "b"]
 
 
 def test_rerank_with_remote_backward_compat_results_contract(monkeypatch) -> None:
@@ -253,7 +283,7 @@ def test_rerank_with_remote_backward_compat_results_contract(monkeypatch) -> Non
 
     docs = [Document(page_content="a"), Document(page_content="b")]
 
-    result = rerank_with_remote(docs, "q", top_k=2, base_url="http://x", min_score=0.0, timeout=5)
+    result = rerank_with_remote(docs, "q", top_k=2, base_url="http://x", timeout=5)
 
     assert [d.page_content for d in result] == ["b", "a"]
     assert result[0].metadata["score"] == pytest.approx(0.95)
@@ -269,7 +299,6 @@ def test_get_reranker_remote_requires_base_url() -> None:
         rerank_top_k=3,
         rerank_model="BAAI/bge-reranker-v2-m3",
         rerank_base_url="",
-        rerank_min_score=0.0,
     )
     with pytest.raises(ValueError, match="RERANK_BASE_URL is required"):
         get_reranker(cfg)
@@ -311,7 +340,7 @@ def test_get_reranker_default_provider_is_remote(monkeypatch) -> None:
 
     monkeypatch.setattr(httpx, "Client", FakeClient)
 
-    direct = rerank_with_remote(docs, "q", top_k=2, base_url="http://rerank-server", min_score=0.0)
+    direct = rerank_with_remote(docs, "q", top_k=2, base_url="http://rerank-server")
     assert [d.page_content for d in direct] == ["b", "a"], f"direct got {[(d.page_content, d.metadata.get('score')) for d in direct]}"
 
     result = fn(docs, "q")
