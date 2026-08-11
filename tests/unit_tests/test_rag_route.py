@@ -104,6 +104,40 @@ def test_rag_question_answer_default_top_k_is_none(mock_graph, client) -> None:
 
 
 @patch("agent.routes.rag.graph")
+def test_rag_question_answer_top_k_validation_above_max(mock_graph, client) -> None:
+    """``top_k`` > 40 bị Pydantic validate reject (le=40)."""
+    response = client.post(
+        "/rag/",
+        json={"messages": [{"role": "user", "content": "q"}], "top_k": 41},
+    )
+    assert response.status_code == 422
+
+
+@patch("agent.routes.rag.graph")
+def test_rag_question_answer_top_k_validation_below_min(mock_graph, client) -> None:
+    """``top_k`` < 1 bị Pydantic validate reject (ge=1)."""
+    response = client.post(
+        "/rag/",
+        json={"messages": [{"role": "user", "content": "q"}], "top_k": 0},
+    )
+    assert response.status_code == 422
+
+
+@patch("agent.routes.rag.graph")
+def test_rag_question_answer_top_k_at_boundary(mock_graph, client) -> None:
+    """``top_k = 1`` và ``top_k = 40`` đều hợp lệ."""
+    mock_graph.ainvoke = AsyncMock(
+        return_value={"query": "q", "documents": []}
+    )
+    for k in (1, 40):
+        response = client.post(
+            "/rag/",
+            json={"messages": [{"role": "user", "content": "q"}], "top_k": k},
+        )
+        assert response.status_code == 200, k
+
+
+@patch("agent.routes.rag.graph")
 def test_rag_stream_emits_ndjson_events(mock_graph, client) -> None:
     async def mock_stream(*_args: Any, **_kwargs: Any):
         yield {

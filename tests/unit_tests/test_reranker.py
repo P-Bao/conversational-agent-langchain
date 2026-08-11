@@ -13,6 +13,8 @@ def _cfg(provider: str = "none", top_k: int = 3) -> MagicMock:
         rerank_provider=provider,
         rerank_top_k=top_k,
         rerank_model="BAAI/bge-reranker-v2-m3",
+        rerank_base_url="http://rerank-server",
+        rerank_min_score=0.0,
     )
 
 
@@ -93,7 +95,132 @@ def test_rerank_with_bge_single_score_list_normalization(monkeypatch) -> None:
 
 
 def test_rerank_with_remote_writes_scores_to_metadata(monkeypatch) -> None:
-    """``rerank_with_remote`` must propagate the remote server's scores into metadata."""
+    """``rerank_with_remote`` map ranked_indices + scores (contract mới) vào metadata."""
+    from agent.utils.reranker import rerank_with_remote
+
+    fake_response = MagicMock()
+    fake_response.raise_for_status = MagicMock()
+    fake_response.json = MagicMock(
+        return_value={
+            "scores": [0.31, 0.95],
+            "ranked_indices": [1, 0],
+        }
+    )
+
+    import httpx
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def post(self, *_args, **_kwargs):
+            return fake_response
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    docs = [
+        Document(page_content="a", metadata={"source": "s.pdf"}),
+        Document(page_content="b"),
+    ]
+
+    result = rerank_with_remote(docs, "q", top_k=2, base_url="http://x", min_score=0.0, timeout=5)
+
+    assert [d.page_content for d in result] == ["b", "a"]
+    assert result[0].metadata["score"] == pytest.approx(0.95)
+    assert result[1].metadata["score"] == pytest.approx(0.31)
+    # document "a" preserved its existing metadata
+    assert result[1].metadata["source"] == "s.pdf"
+
+
+def test_rerank_with_remote_skips_indexes_out_of_range(monkeypatch) -> None:
+    """Out-of-range / missing indices in ``ranked_indices`` dropped safely."""
+    from agent.utils.reranker import rerank_with_remote
+
+    fake_response = MagicMock()
+    fake_response.raise_for_status = MagicMock()
+    fake_response.json = MagicMock(
+        return_value={
+            "scores": [0.99, 0.4],
+            "ranked_indices": [5, 1],  # 5 out of range, 1 valid
+        }
+    )
+
+    import httpx
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def post(self, *_args, **_kwargs):
+            return fake_response
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    docs = [Document(page_content="a"), Document(page_content="b")]
+
+    result = rerank_with_remote(docs, "q", top_k=2, base_url="http://x", min_score=0.0, timeout=5)
+
+    # Only index 1 valid; out-of-range 5 dropped.
+    assert [d.page_content for d in result] == ["b"]
+    assert result[0].metadata["score"] == pytest.approx(0.4)
+
+
+def test_rerank_with_remote_forwards_min_score_and_top_k(monkeypatch) -> None:
+    """Payload gửi server chứa ``min_score`` + ``top_k`` theo cfg."""
+    from agent.utils.reranker import rerank_with_remote
+
+    fake_response = MagicMock()
+    fake_response.raise_for_status = MagicMock()
+    fake_response.json = MagicMock(
+        return_value={"scores": [0.9, 0.7, 0.5], "ranked_indices": [0, 1, 2]}
+    )
+
+    captured: dict = {}
+
+    import httpx
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def post(self, _url, json=None, **_kwargs):
+            captured["payload"] = json
+            return fake_response
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    docs = [Document(page_content="a"), Document(page_content="b"), Document(page_content="c")]
+    rerank_with_remote(
+        docs, "q", top_k=3, base_url="http://x", min_score=0.1, timeout=5
+    )
+
+    assert captured["payload"]["min_score"] == 0.1
+    assert captured["payload"]["top_k"] == 3
+    assert "normalize" not in captured["payload"]
+    assert captured["payload"]["query"] == "q"
+    assert captured["payload"]["documents"] == ["a", "b", "c"]
+
+
+def test_rerank_with_remote_backward_compat_results_contract(monkeypatch) -> None:
+    """Fallback tương thích contract cũ ``{"results": [{index, score}]}``."""
     from agent.utils.reranker import rerank_with_remote
 
     fake_response = MagicMock()
@@ -124,33 +251,47 @@ def test_rerank_with_remote_writes_scores_to_metadata(monkeypatch) -> None:
 
     monkeypatch.setattr(httpx, "Client", FakeClient)
 
-    docs = [
-        Document(page_content="a", metadata={"source": "s.pdf"}),
-        Document(page_content="b"),
-    ]
+    docs = [Document(page_content="a"), Document(page_content="b")]
 
-    result = rerank_with_remote(docs, "q", top_k=2, base_url="http://x", timeout=5)
+    result = rerank_with_remote(docs, "q", top_k=2, base_url="http://x", min_score=0.0, timeout=5)
 
     assert [d.page_content for d in result] == ["b", "a"]
     assert result[0].metadata["score"] == pytest.approx(0.95)
     assert result[1].metadata["score"] == pytest.approx(0.31)
-    # document "a" preserved its existing metadata
-    assert result[1].metadata["source"] == "s.pdf"
 
 
-def test_rerank_with_remote_skips_indexes_out_of_range(monkeypatch) -> None:
-    """Out-of-range / missing indices are dropped safely without indexing errors."""
+def test_get_reranker_remote_requires_base_url() -> None:
+    """``provider=remote`` mà thiếu ``rerank_base_url`` phải raise."""
+    from agent.utils.reranker import get_reranker
+
+    cfg = MagicMock(
+        rerank_provider="remote",
+        rerank_top_k=3,
+        rerank_model="BAAI/bge-reranker-v2-m3",
+        rerank_base_url="",
+        rerank_min_score=0.0,
+    )
+    with pytest.raises(ValueError, match="RERANK_BASE_URL is required"):
+        get_reranker(cfg)
+
+
+def test_get_reranker_default_provider_is_remote(monkeypatch) -> None:
+    """Config default ``rerank_provider = 'remote'`` (không còn ``bge``)."""
+    from agent.utils.config import Config
     from agent.utils.reranker import rerank_with_remote
+
+    cfg = Config(
+        rerank_provider="remote",
+        rerank_base_url="http://rerank-server",
+        rerank_top_k=2,
+    )
+    fn = get_reranker(cfg, top_k=2)
+    docs = [Document(page_content="a"), Document(page_content="b")]
 
     fake_response = MagicMock()
     fake_response.raise_for_status = MagicMock()
     fake_response.json = MagicMock(
-        return_value={
-            "results": [
-                {"index": 5, "score": 0.99},  # out of range
-                {"index": 1, "score": 0.4},
-            ]
-        }
+        return_value={"scores": [0.1, 0.9], "ranked_indices": [1, 0]}
     )
 
     import httpx
@@ -170,10 +311,9 @@ def test_rerank_with_remote_skips_indexes_out_of_range(monkeypatch) -> None:
 
     monkeypatch.setattr(httpx, "Client", FakeClient)
 
-    docs = [Document(page_content="a"), Document(page_content="b")]
+    direct = rerank_with_remote(docs, "q", top_k=2, base_url="http://rerank-server", min_score=0.0)
+    assert [d.page_content for d in direct] == ["b", "a"], f"direct got {[(d.page_content, d.metadata.get('score')) for d in direct]}"
 
-    result = rerank_with_remote(docs, "q", top_k=2, base_url="http://x", timeout=5)
-
-    # Only index 1 was valid; out-of-range 5 dropped.
-    assert [d.page_content for d in result] == ["b"]
-    assert result[0].metadata["score"] == pytest.approx(0.4)
+    result = fn(docs, "q")
+    assert [d.page_content for d in result] == ["b", "a"], f"closure got {[(d.page_content, d.metadata.get('score')) for d in result]}"
+    assert result[0].metadata["score"] == pytest.approx(0.9)

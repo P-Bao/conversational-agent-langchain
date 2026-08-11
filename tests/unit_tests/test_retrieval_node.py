@@ -183,3 +183,25 @@ def test_retrieve_documents_top_k_missing_from_state_falls_back_to_cfg(
     mock_get_reranker.assert_called_once()
     call_kwargs = mock_get_reranker.call_args[1]
     assert call_kwargs["top_k"] == 13
+
+
+@patch("agent.backend.nodes.retrieval.get_reranker")
+@patch("agent.backend.nodes.retrieval.get_retriever")
+def test_retrieve_documents_top_k_clamped_to_retrieval_k(
+    mock_get_retriever, mock_get_reranker
+) -> None:
+    """``top_k`` không được vượt số doc retrieve (k = retrieval_k)."""
+    from agent.backend.nodes.retrieval import retrieve_documents
+    from agent.utils.config import Config
+
+    cfg = Config(rerank_provider="bge", rerank_top_k=5, retrieval_k=20)
+    mock_get_reranker.return_value = lambda d, _q: d
+    mock_get_retriever.return_value = _make_retriever_value([Document(page_content="x")])
+
+    # state.top_k = 50 nhưng retrieval_k = 20 -> clamp = 20
+    state = {**_make_state("q"), "top_k": 50}
+    retrieve_documents(state, {}, cfg=cfg)
+
+    mock_get_reranker.assert_called_once()
+    call_kwargs = mock_get_reranker.call_args[1]
+    assert call_kwargs["top_k"] == 20
