@@ -40,7 +40,6 @@ class Config(BaseSettings):
         default="",
         validation_alias=AliasChoices("rerank_base_url", "RERANK_BASE_URL", "AU_RERANK_BASE_URL"),
     )
-    rerank_min_score: float = 0.0
     rerank_model: str = Field(
         default="BAAI/bge-reranker-v2-m3",
         validation_alias=AliasChoices("rerank_model", "RERANK_MODEL", "AU_RERANK_MODEL_NAME"),

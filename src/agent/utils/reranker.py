@@ -4,10 +4,10 @@ Supports three modes:
 - ``remote`` (default): delegate tới HTTP rerank server (``RERANK_BASE_URL``,
   vd ``http://127.0.0.1:8010``). Contract mới:
     POST {base_url}/rerank
-        body: {"query", "documents": [str], "top_k": int, "min_score": float}
+        body: {"query", "documents": [str], "top_k": int}
         resp: {"scores": [float, ...], "ranked_indices": [int, ...]}
-  ``scores`` là điểm (đã normalize 0-1) theo thứ tự input documents;
-  ``ranked_indices`` là index đã sort giảm dần, áp ``top_k`` + ``min_score``.
+  ``scores`` là điểm theo thứ tự input documents;
+  ``ranked_indices`` là index đã sort giảm dần, áp ``top_k``.
   Có fallback tương thích ngược với contract cũ ``{"results": [{index, score}]}``.
 - ``bge`` (fallback): run locally via ``FlagEmbedding.FlagReranker`` (cần GPU).
 - ``none``: passthrough (truncate to top_k).
@@ -88,7 +88,6 @@ def rerank_with_remote(
     *,
     top_k: int,
     base_url: str,
-    min_score: float = 0.0,
     timeout: float = _REMOTE_TIMEOUT,
 ) -> list[Document]:
     """Rerank documents by remote /rerank endpoint (rerank server, vd :8010).
@@ -96,7 +95,7 @@ def rerank_with_remote(
     Contract mới (ưu tiên):
         resp: {"scores": [float, ...], "ranked_indices": [int, ...]}
     ``scores`` theo thứ tự input documents; ``ranked_indices`` đã sort giảm dần
-    + áp ``top_k`` + ``min_score`` (server-side filter).
+    + áp ``top_k``.
     Fallback tương thích ngược contract cũ: ``{"results": [{"index","score"}]}``.
 
     Fail-fast: lỗi HTTP/timeout được raise (không auto-fallback sang local).
@@ -114,10 +113,6 @@ def rerank_with_remote(
         "documents": [d.page_content for d in documents],
         "top_k": top_k,
     }
-    # Chỉ gửi min_score khi > 0. Server filter "scores >= min_score"; với default
-    # 0.0 mà gửi đi sẽ loại mọi doc có logit âm (BGE-reranker raw logits) → rỗng.
-    if min_score and min_score > 0:
-        payload["min_score"] = min_score
     with httpx.Client(timeout=timeout) as client:
         r = client.post(url, json=payload)
         r.raise_for_status()
@@ -173,12 +168,9 @@ def get_reranker(
         if not base_url:
             msg = "RERANK_BASE_URL is required when RERANK_PROVIDER=remote."
             raise ValueError(msg)
-        min_score = cfg.rerank_min_score
 
         def remote_rerank(docs: list[Document], query: str) -> list[Document]:
-            return rerank_with_remote(
-                docs, query, top_k=k, base_url=base_url, min_score=min_score
-            )
+            return rerank_with_remote(docs, query, top_k=k, base_url=base_url)
         return remote_rerank
 
     if normalized == "bge":
