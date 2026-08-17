@@ -2,13 +2,12 @@
 
 Supports three modes:
 - ``remote`` (default): delegate tới HTTP rerank server (``RERANK_BASE_URL``,
-  vd ``http://127.0.0.1:8010``). Contract mới:
-    POST {base_url}/rerank
-        body: {"query", "documents": [str], "top_k": int}
-        resp: {"scores": [float, ...], "ranked_indices": [int, ...]}
-  ``scores`` là điểm theo thứ tự input documents;
-  ``ranked_indices`` là index đã sort giảm dần, áp ``top_k``.
-  Có fallback tương thích ngược với contract cũ ``{"results": [{index, score}]}``.
+  vd ``http://127.0.0.1:8010``). Hỗ trợ các định dạng response:
+    1. {"scores": [float, ...], "ranked_indices": [int, ...]}
+       ``scores`` theo thứ tự input documents; ``ranked_indices`` đã sort giảm dần + áp ``top_k``.
+    2. {"scores": [float, ...]}
+       Server chỉ trả raw scores theo thứ tự input docs -> client tự sort desc và lấy ``top_k``.
+    3. {"results": [{"index": int, "score": float}, ...]} (legacy contract).
 - ``bge`` (fallback): run locally via ``FlagEmbedding.FlagReranker`` (cần GPU).
 - ``none``: passthrough (truncate to top_k).
 
@@ -92,11 +91,12 @@ def rerank_with_remote(
 ) -> list[Document]:
     """Rerank documents by remote /rerank endpoint (rerank server, vd :8010).
 
-    Contract mới (ưu tiên):
-        resp: {"scores": [float, ...], "ranked_indices": [int, ...]}
-    ``scores`` theo thứ tự input documents; ``ranked_indices`` đã sort giảm dần
-    + áp ``top_k``.
-    Fallback tương thích ngược contract cũ: ``{"results": [{"index","score"}]}``.
+    Response format hỗ trợ:
+    1. {"scores": [float, ...], "ranked_indices": [int, ...]}
+       ``scores`` theo thứ tự input documents; ``ranked_indices`` đã sort giảm dần + áp ``top_k``.
+    2. {"scores": [float, ...]}
+       Chỉ trả mảng điểm -> client tự sắp xếp giảm dần và lấy ``top_k``.
+    3. {"results": [{"index": int, "score": float}, ...]} (legacy fallback).
 
     Fail-fast: lỗi HTTP/timeout được raise (không auto-fallback sang local).
     """
@@ -118,18 +118,35 @@ def rerank_with_remote(
         r.raise_for_status()
         data = r.json()
 
-    # Build index → score map, ưu tiên contract mới {"scores", "ranked_indices"}
+    # Build index → score map and determine ranking order
     scores: list[float] = data.get("scores") or []
     indices = data.get("ranked_indices")
-    if indices is None:
+
+    if indices is not None and len(indices) > 0:
+        # Contract đầy đủ {"scores", "ranked_indices"}
+        scores_map: dict[int, float | None] = {
+            i: scores[i] for i in range(min(len(scores), len(documents)))
+        }
+    elif "results" in data:
         # Fallback contract cũ {"results": [{"index", "score"}]}
         results = data.get("results", [])
         indices = [it.get("index") for it in results]
-        scores_map: dict[int, float | None] = {
+        scores_map = {
             it.get("index"): it.get("score") for it in results
         }
+    elif scores:
+        # Response dạng {"scores": [...]} -> client tự sort desc theo score và lấy top_k
+        valid_len = min(len(scores), len(documents))
+        indices = sorted(range(valid_len), key=lambda i: scores[i], reverse=True)[:top_k]
+        scores_map = {i: scores[i] for i in range(valid_len)}
     else:
-        scores_map = {i: scores[i] for i in range(min(len(scores), len(documents)))}
+        # Khi server trả về rỗng không có scores hay ranked_indices
+        logger.warning(
+            f"Remote rerank returned empty ranked_indices for {len(documents)} docs (top_k={top_k}); "
+            "client-side fallback ordering applied"
+        )
+        indices = list(range(min(top_k, len(documents))))
+        scores_map = {}
 
     ranked: list[Document] = []
     for idx in indices:

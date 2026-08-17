@@ -346,3 +346,80 @@ def test_get_reranker_default_provider_is_remote(monkeypatch) -> None:
     result = fn(docs, "q")
     assert [d.page_content for d in result] == ["b", "a"], f"closure got {[(d.page_content, d.metadata.get('score')) for d in result]}"
     assert result[0].metadata["score"] == pytest.approx(0.9)
+
+
+def test_rerank_with_remote_scores_only_contract(monkeypatch) -> None:
+    """Server chỉ trả về ``{"scores": [...]}`` -> client tự sort desc và lấy top_k."""
+    from agent.utils.reranker import rerank_with_remote
+
+    fake_response = MagicMock()
+    fake_response.raise_for_status = MagicMock()
+    fake_response.json = MagicMock(
+        return_value={"scores": [0.0018797, 0.9978798]}
+    )
+
+    import httpx
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def post(self, *_args, **_kwargs):
+            return fake_response
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    docs = [
+        Document(page_content="CSS quy định bố cục."),
+        Document(page_content="HTML là ngôn ngữ đánh dấu siêu văn bản."),
+    ]
+
+    result = rerank_with_remote(docs, "HTML là gì?", top_k=1, base_url="http://x", timeout=5)
+
+    assert len(result) == 1
+    assert result[0].page_content == "HTML là ngôn ngữ đánh dấu siêu văn bản."
+    assert result[0].metadata["score"] == pytest.approx(0.9978798)
+
+
+def test_rerank_with_remote_empty_response_fallback(monkeypatch) -> None:
+    """Khi server trả về rỗng không có scores hay ranked_indices -> client fallback an toàn."""
+    from agent.utils.reranker import rerank_with_remote
+
+    fake_response = MagicMock()
+    fake_response.raise_for_status = MagicMock()
+    fake_response.json = MagicMock(return_value={})
+
+    import httpx
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def post(self, *_args, **_kwargs):
+            return fake_response
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    docs = [
+        Document(page_content="doc1"),
+        Document(page_content="doc2"),
+        Document(page_content="doc3"),
+    ]
+
+    result = rerank_with_remote(docs, "q", top_k=2, base_url="http://x", timeout=5)
+
+    assert len(result) == 2
+    assert [d.page_content for d in result] == ["doc1", "doc2"]
+
