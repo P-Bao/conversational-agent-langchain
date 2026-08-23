@@ -124,16 +124,12 @@ def rerank_with_remote(
 
     if indices is not None and len(indices) > 0:
         # Contract đầy đủ {"scores", "ranked_indices"}
-        scores_map: dict[int, float | None] = {
-            i: scores[i] for i in range(min(len(scores), len(documents)))
-        }
+        scores_map: dict[int, float | None] = {i: scores[i] for i in range(min(len(scores), len(documents)))}
     elif "results" in data:
         # Fallback contract cũ {"results": [{"index", "score"}]}
         results = data.get("results", [])
         indices = [it.get("index") for it in results]
-        scores_map = {
-            it.get("index"): it.get("score") for it in results
-        }
+        scores_map = {it.get("index"): it.get("score") for it in results}
     elif scores:
         # Response dạng {"scores": [...]} -> client tự sort desc theo score và lấy top_k
         valid_len = min(len(scores), len(documents))
@@ -141,10 +137,7 @@ def rerank_with_remote(
         scores_map = {i: scores[i] for i in range(valid_len)}
     else:
         # Khi server trả về rỗng không có scores hay ranked_indices
-        logger.warning(
-            f"Remote rerank returned empty ranked_indices for {len(documents)} docs (top_k={top_k}); "
-            "client-side fallback ordering applied"
-        )
+        logger.warning(f"Remote rerank returned empty ranked_indices for {len(documents)} docs (top_k={top_k}); client-side fallback ordering applied")
         indices = list(range(min(top_k, len(documents))))
         scores_map = {}
 
@@ -188,16 +181,21 @@ def get_reranker(
 
         def remote_rerank(docs: list[Document], query: str) -> list[Document]:
             return rerank_with_remote(docs, query, top_k=k, base_url=base_url)
+
         return remote_rerank
 
     if normalized == "bge":
+
         def local_rerank(docs: list[Document], query: str) -> list[Document]:
             return rerank_with_bge(docs, query, top_k=k, model_name=model_name)
+
         return local_rerank
 
     if normalized == "none":
+
         def passthrough(docs: list[Document], _query: str) -> list[Document]:
             return docs[:k]
+
         return passthrough
 
     msg = f"Unknown reranker provider: {cfg.rerank_provider!r}. Supported: 'none', 'remote', 'bge'."
