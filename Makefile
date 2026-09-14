@@ -11,7 +11,7 @@ SHELL = /bin/bash
 
 # Mark all command names as phony so make does not confuse them with files of
 # the same name in the repository.
-.PHONY: help style restart clean docker-clean start_backend start_vectordb setup start_docker down test test-vcr update-vcr-tests test-e2e monitoring-up monitoring-down dashboard-configmap dashboard-apply
+.PHONY: help style restart clean docker-clean start_backend start_vectordb setup start_docker down test test-vcr update-vcr-tests test-e2e dashboard-configmap dashboard-apply
 
 # Print a quick reference for the most common developer commands.
 help:
@@ -22,8 +22,6 @@ help:
 	@echo "  make test-vcr       - Run VCR-marked tests"
 	@echo "  make update-vcr-tests - Rewrite VCR recordings"
 	@echo "  make test-e2e       - Run end-to-end tests"
-	@echo "  make monitoring-up  - Start service + observability stack (docker compose)"
-	@echo "  make monitoring-down- Stop docker services"
 	@echo "  make dashboard-configmap - Generate dashboard ConfigMap for Grafana sidecar"
 	@echo "  make dashboard-apply     - Apply dashboard ConfigMap + ServiceMonitor to cluster"
 	@echo "  make start_backend  - Start the FastAPI backend"
@@ -95,13 +93,6 @@ clean:
 	find . -type d -name ".ipynb_checkpoints" -exec rm -rf {} +
 	find . -type f -name "*.DS_Store" -delete
 	rm -rf .coverage* htmlcov/
-
-## Chạy service + hạ tầng quan sát local qua docker-compose
-monitoring-up:
-	docker compose up -d
-
-monitoring-down:
-	docker compose down --remove-orphans
 
 ## Sinh ConfigMap chứa dashboard JSON từ monitoring/dashboards/, gắn label để Grafana sidecar tự nhận
 ## (namespace "monitoring" là giả định — chỉnh theo cluster của tổ chức nếu khác)

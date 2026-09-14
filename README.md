@@ -142,13 +142,18 @@ Cấu hình dashboard/ServiceMonitor tại [`monitoring/README.md`](monitoring/R
 ### Chạy local (docker-compose)
 
 ```bash
-make monitoring-up      # chạy retrieval service
+make start_docker        # chạy retrieval service (docker compose up --build -d)
 # Tracing tắt local: điền OTEL_EXPORTER_OTLP_ENDPOINT trong template.env
 # (endpoint OTLP/HTTP của Tempo/Collector trong cluster k8s) để bật.
 # Metrics: http://localhost:8005/metrics
 ```
 
-### Đưa dashboard lên Grafana trung tâm của tổ chức (Kubernetes + Helm)
+### Đưa dashboard lên Grafana trung tâm của tổ chức (Kubernetes)
+
+Chỉ dashboard + ServiceMonitor được apply lên **cluster k8s sẵn có** (không chạy
+`helm install` — Grafana trung tâm của tổ chức đã cấu hình sidecar từ trước):
+ServiceMonitor scrape `/metrics` của instance service **deploy trên k8s**;
+docker-compose local chỉ dùng để dev/test.
 
 ```bash
 make dashboard-apply     # tạo ConfigMap dashboard + apply ServiceMonitor lên cluster
