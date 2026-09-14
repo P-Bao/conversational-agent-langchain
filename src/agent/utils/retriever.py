@@ -7,6 +7,7 @@ from qdrant_client.http.models import SparseVector
 
 from agent.utils.config import Config, config
 from agent.utils.embeddings import BGEM3RemoteEmbeddings, get_embedding_model
+from agent.utils.observability import wrap_retriever
 from agent.utils.vdb import qdrant_client
 
 _embeddings_cache: dict[tuple[str, str], BGEM3RemoteEmbeddings] = {}
@@ -68,7 +69,11 @@ def _get_cached_vector_store(cfg: Config) -> QdrantVectorStore:
 
 
 def get_retriever(k: int = 4, *, cfg: Config | None = None) -> BaseRetriever:
-    """Create a Vector Database retriever (hybrid, remote BGE-m3 dense+sparse)."""
+    """Create a Vector Database retriever (hybrid, remote BGE-m3 dense+sparse).
+
+    The retriever is wrapped with Prometheus metrics + OTel tracing
+    (``TracedRetriever``) so every entry point is instrumented.
+    """
     active_cfg = cfg or config
     vector_db = _get_cached_vector_store(active_cfg)
-    return vector_db.as_retriever(search_kwargs={"k": k})
+    return wrap_retriever(vector_db.as_retriever(search_kwargs={"k": k}))
