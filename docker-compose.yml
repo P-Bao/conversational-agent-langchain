@@ -9,6 +9,12 @@ services:
       - "8005:8005"
     env_file:
       - .env
+    environment:
+      # OTel tracing: export OTLP/HTTP to the Tempo / OTel Collector in the
+      # k8s cluster (confirm the real endpoint with the infra team). Leave
+      # unset to disable tracing locally.
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_SERVICE_NAME=rag-retrieval
     volumes:
       - ./hf-cache:/app/.cache/huggingface
     networks:

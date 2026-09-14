@@ -23,6 +23,10 @@ dependencies = [
     # Pin versions to match embedding-server for GPU compatibility & prepare_for_model support
     "FlagEmbedding==1.4.0",
     "transformers==4.57.1",
+    # Observability: Prometheus metrics + OpenTelemetry tracing (OTLP export to Tempo)
+    "prometheus-client>=0.21.0",
+    "opentelemetry-sdk>=1.28.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.28.0",
 ]
 [build-system]
 requires = ["uv_build"]
