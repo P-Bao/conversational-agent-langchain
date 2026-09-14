@@ -19,6 +19,7 @@ services:
       - ./hf-cache:/app/.cache/huggingface
     networks:
       - ami-network
+      - ami-net
     deploy:
       resources:
         reservations:
@@ -37,4 +38,6 @@ services:
 
 networks:
   ami-network:
+    external: true
+  ami_net:
     external: true
