@@ -10,7 +10,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -90,7 +90,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "sum(rate(rag_retrieval_requests_total[5m]))",
           "legendFormat": "requests/s",
@@ -103,7 +103,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -146,7 +146,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "sum by (day) (increase(rag_retrieval_requests_by_day_total[$__range]))",
           "legendFormat": "{{day}}",
@@ -159,7 +159,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -202,7 +202,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "sum by (hod) (increase(rag_retrieval_requests_by_hour_of_day_total[$__range]))",
           "legendFormat": "hour {{hod}}",
@@ -215,7 +215,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -295,7 +295,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "last_over_time((histogram_quantile(0.5, sum(rate(rag_retrieval_duration_seconds_bucket[5m])) by (le)))[6h:1m])",
           "legendFormat": "P50",
@@ -304,7 +304,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "last_over_time((histogram_quantile(0.95, sum(rate(rag_retrieval_duration_seconds_bucket[5m])) by (le)))[6h:1m])",
           "legendFormat": "P95",
@@ -313,7 +313,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "last_over_time((histogram_quantile(0.99, sum(rate(rag_retrieval_duration_seconds_bucket[5m])) by (le)))[6h:1m])",
           "legendFormat": "P99",
@@ -326,7 +326,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -408,7 +408,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "sum(rate(rag_retrieval_errors_total[5m]))",
           "legendFormat": "errors/s",
@@ -421,7 +421,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -478,7 +478,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "rag_retrieval_requests_in_flight",
           "legendFormat": "in-flight",
@@ -491,7 +491,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -571,7 +571,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "last_over_time((histogram_quantile(0.5, sum(rate(rag_retrieval_docs_returned_bucket[5m])) by (le)))[6h:1m])",
           "legendFormat": "P50 docs",
@@ -580,7 +580,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "last_over_time((sum(rate(rag_retrieval_docs_returned_sum[5m])) / sum(rate(rag_retrieval_docs_returned_count[5m])))[6h:1m])",
           "legendFormat": "avg docs",
@@ -593,7 +593,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -636,7 +636,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "sum by (le) (increase(rag_retrieval_docs_returned_bucket[$__range]))",
           "legendFormat": "le={{le}}",
@@ -655,21 +655,7 @@
     "observability"
   ],
   "templating": {
-    "list": [
-      {
-        "current": {},
-        "hide": 2,
-        "includeAll": false,
-        "label": "Prometheus",
-        "multi": false,
-        "name": "DS_PROMETHEUS",
-        "options": [],
-        "query": "prometheus",
-        "refresh": 1,
-        "regex": "",
-        "type": "datasource"
-      }
-    ]
+    "list": []
   },
   "time": {
     "from": "now-6h",
