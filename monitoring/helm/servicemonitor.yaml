@@ -1,0 +1,26 @@
+# ServiceMonitor (Prometheus Operator CRD) để tự động scrape /metrics của
+# rag-retrieval service.
+#
+# CHÚ Ý (bắt buộc):
+# - `metadata.labels.release` PHẢI khớp label mà kube-prometheus-stack đang
+#   dùng để tự phát hiện ServiceMonitor trong cluster của tổ chức (thường là
+#   "prometheus" hoặc "kube-prometheus-stack" — kiểm tra giá trị thật với
+#   đội hạ tầng trước khi apply).
+# - `spec.selector.matchLabels` PHẢI khớp labels trên Service của
+#   rag-retrieval trong k8s (xem deployment manifest của đội hạ tầng).
+# - `port: metrics` yêu cầu Service expose một port có tên "metrics" trỏ tới
+#   port 8005 (container port) của rag-retrieval pod.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rag-retrieval
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: rag-retrieval
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s

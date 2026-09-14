@@ -1,0 +1,26 @@
+# Grafana Helm values — deploy dashboard provisioning cho Grafana trung tâm.
+#
+# Cơ chế: Grafana Helm chart hỗ trợ "dashboard sidecar" — tự động load mọi
+# ConfigMap có label `grafana_dashboard=1` trong cluster thành dashboard,
+# không cần import tay qua UI mỗi lần thay đổi.
+#
+# CHÚ Ý (bắt buộc): các giá trị chart/label/namespace dưới đây là giả định
+# hợp lý theo pattern kube-prometheus-stack phổ biến — PHẢI xác nhận lại với
+# đội hạ tầng / Grafana trung tâm của tổ chức xem họ đang dùng chart nào
+# (grafana/grafana hay prometheus-community/kube-prometheus-stack), sidecar
+# label nào, trước khi apply. Tránh conflict với cấu hình sẵn có.
+#
+# Apply: xem Makefile (make dashboard-apply) và monitoring/README.md.
+
+sidecar:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    labelValue: "1"
+    folder: /tmp/dashboards
+    provider:
+      foldersFromFilesStructure: true
+
+grafana.ini:
+  dashboards:
+    default_home_dashboard_path: /tmp/dashboards/rag-retrieval-dashboard.json
