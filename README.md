@@ -23,6 +23,7 @@ Backend RAG retrieval service: trả về context (documents) cho downstream LLM
 | POST | `/rag/` | Retrieval qua LangGraph (hybrid) + optional rerank (remote `:8010`) |
 | POST | `/rag/stream` | NDJSON stream của `/rag/` |
 | POST | `/semantic/search` | Direct hybrid search (no rerank) |
+| GET | `/metrics` | Prometheus metrics cho scraping (Grafana) |
 
 > **Endpoints đã bỏ (chuyển sang repo ingestion ngoài):** `POST /collection/create/{name}`,
 > `POST /embeddings/documents`, `POST /embeddings/string/`, `DELETE /embeddings/delete/{source}`.
@@ -49,6 +50,7 @@ Bộ tài liệu bàn giao đầy đủ tại [`docs/`](docs/README.md):
 | Thuật ngữ | [GLOSSARY.md](docs/GLOSSARY.md) |
 | User Guide | [USER_GUIDE.md](docs/USER_GUIDE.md) |
 | Handover Checklist | [HANDOVER_CHECKLIST.md](docs/HANDOVER_CHECKLIST.md) |
+| Monitoring & Observability | [observability.md](docs/observability.md) |
 
 ## Quickstart
 
@@ -122,3 +124,38 @@ Qdrant (Hybrid Search, dense + sparse fusion)  <-- collection do he ngoai quan l
   ```bash
   ALLOW_NETWORK_TESTS=1 uv run pytest tests/test_rag_deepeval_qwen.py -m qwen -vv
   ```
+
+## Monitoring & Observability
+
+Chi tiết kiến trúc tại [`docs/observability.md`](docs/observability.md).
+Cấu hình dashboard/ServiceMonitor tại [`monitoring/README.md`](monitoring/README.md).
+
+- **Metrics (Prometheus)**: `GET /metrics` — đủ 8 metric `rag_retrieval_*`
+  (requests, by day/hour, latency histogram, errors, in-flight, docs returned).
+- **Tracing (OpenTelemetry → Tempo)**: mỗi retrieval tạo 1 span với query
+  nguyên văn + full danh sách documents (page_content + metadata + score);
+  full payload cũng được ghi vào structured log kèm `trace_id` để join
+  Tempo ↔ Loki trong Grafana.
+- **Dashboard "RAG Retrieval"**: timezone cố định `Asia/Ho_Chi_Minh`; latency
+  panel P50/P95/P99 dùng `last_over_time()` để giữ giá trị cũ khi idle.
+
+### Chạy local (docker-compose)
+
+```bash
+make monitoring-up      # chạy retrieval service
+# Tracing tắt local: điền OTEL_EXPORTER_OTLP_ENDPOINT trong template.env
+# (endpoint OTLP/HTTP của Tempo/Collector trong cluster k8s) để bật.
+# Metrics: http://localhost:8005/metrics
+```
+
+### Đưa dashboard lên Grafana trung tâm của tổ chức (Kubernetes + Helm)
+
+```bash
+make dashboard-apply     # tạo ConfigMap dashboard + apply ServiceMonitor lên cluster
+```
+
+Sau vài phút, dashboard "RAG Retrieval" tự xuất hiện trong Grafana trung tâm
+(không cần import tay) nhờ dashboard sidecar. Nếu không thấy, kiểm tra
+namespace/label trong `monitoring/helm/` có khớp với cấu hình Grafana Helm
+chart thật của tổ chức không (xem mục Deploy dashboard trong
+`monitoring/README.md`).
