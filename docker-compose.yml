@@ -10,11 +10,16 @@ services:
     env_file:
       - .env
     environment:
-      # OTel tracing: export OTLP/HTTP to the Tempo / OTel Collector in the
-      # k8s cluster (confirm the real endpoint with the infra team). Leave
-      # unset to disable tracing locally.
+      # OTel tracing: export OTLP/HTTP to Tempo (NodePort) in the k8s cluster.
+      # host.docker.internal = host gateway (works on Linux via extra_hosts
+      # below, and on Docker Desktop natively). Tempo OTLP HTTP = 4318
+      # (NodePort 30749 in the reference cluster). Leave unset to disable.
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       - OTEL_SERVICE_NAME=rag-retrieval
+    extra_hosts:
+      # Map host.docker.internal to the host gateway so the container can
+      # reach NodePort services (Tempo) running on the host's k8s cluster.
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./hf-cache:/app/.cache/huggingface
     networks:
