@@ -19,7 +19,7 @@ services:
       - ./hf-cache:/app/.cache/huggingface
     networks:
       - ami-network
-      - ami-net
+      - ami_net
     deploy:
       resources:
         reservations:
