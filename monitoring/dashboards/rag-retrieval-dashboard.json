@@ -645,6 +645,36 @@
       ],
       "title": "Docs Returned Distribution (bucket cumulative)",
       "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "tempo",
+        "uid": "afy8sa3jsx88wf"
+      },
+      "description": "Danh sách trace gần nhất của service rag-retrieval. Click vào 1 trace để xem chi tiết span (input/output đầy đủ) và tab 'Related metrics' (Request rate) đã cấu hình ở data source Tempo.",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "id": 9,
+      "options": {},
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "afy8sa3jsx88wf"
+          },
+          "queryType": "traceqlSearch",
+          "query": "{resource.service.name=\"rag-retrieval\"}",
+          "limit": 20,
+          "tableType": "traces",
+          "refId": "A"
+        }
+      ],
+      "title": "RAG Retrieval - Recent Traces",
+      "type": "traces"
     }
   ],
   "refresh": "30s",
@@ -665,6 +695,6 @@
   "timezone": "Asia/Ho_Chi_Minh",
   "title": "RAG Retrieval",
   "uid": "rag-retrieval",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

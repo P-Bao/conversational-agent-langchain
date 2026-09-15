@@ -15,7 +15,7 @@ kind: ServiceMonitor
 metadata:
   name: rag-retrieval
   labels:
-    release: prometheus
+    release: kube-prometheus-stack  # khớp serviceMonitorSelector của kube-prometheus-stack (đã xác nhận ở pattern chirp3)
 spec:
   selector:
     matchLabels:

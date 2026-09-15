@@ -1,0 +1,62 @@
+# rag-retrieval (Docker trên host) → Prometheus scrape — theo pattern chirp3
+# (D:\Code\Python\Ami\chirp3_server\deploy\monitoring\k8s\metrics-scrape.yaml)
+#
+# BỐI CẢNH: service rag-retrieval chạy ở Docker trên server (port 8005),
+# KHÔNG phải trong k8s. ServiceMonitor chỉ scrape Service trong k8s, nên
+# cần tạo Service không selector + Endpoints trỏ thẳng IP host để Prometheus
+# scrape được. Chỉ cần `kubectl apply`, không đụng release
+# kube-prometheus-stack (khác cách helm upgrade additionalScrapeConfigs).
+#
+# ⚠️ ĐIỀN ĐÚNG __NODE_IP__: IP INTERNAL của server chạy Docker
+# (`kubectl get nodes -o wide` → INTERNAL-IP của node ptit-naver-ai-server).
+#
+# ⚠️ Label `release: kube-prometheus-stack` đã được xác nhận hoạt động ở
+# pattern chirp3 (khớp serviceMonitorSelector của kube-prometheus-stack).
+# Kiểm tra lại bằng: kubectl get servicemonitor -A -o yaml | grep release
+#
+# ⚠️ Khi service đã deploy lên k8s (Deployment + Service thật với named port
+# `metrics`), XÓA file này và dùng monitoring/helm/servicemonitor.yaml —
+# ServiceMonitor sẽ scrape Service k8s thật qua selector.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-retrieval-metrics
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: rag-retrieval-metrics
+spec:
+  ports:
+    - name: metrics
+      port: 8005
+      targetPort: 8005
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: rag-retrieval-metrics
+  namespace: monitoring
+subsets:
+  - addresses:
+      - ip: __NODE_IP__
+    ports:
+      - name: metrics
+        port: 8005
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rag-retrieval-metrics
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rag-retrieval-metrics
+  namespaceSelector:
+    matchNames:
+      - monitoring
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s

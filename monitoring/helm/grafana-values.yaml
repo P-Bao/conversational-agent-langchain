@@ -21,6 +21,65 @@ sidecar:
     provider:
       foldersFromFilesStructure: true
 
+# Datasource provisioning — CHỈ thêm nếu Grafana trung tâm CHƯA có:
+# - Prometheus: gần như chắc chắn đã có (kube-prometheus-stack tự provision).
+# - Tempo: cần có để xem trace (service "rag-retrieval" trên Tempo).
+#
+# ⚠️ ĐÃ XÁC NHẬN THÀNH CÔNG QUA UI GRAFANA (Save & Test → "Data source is
+# working", uid afy8sa3jsx88wf) với cấu hình sau — block dưới đây khớp 100%
+# với cấu hình UI đã test, dùng khi đi đường Helm thay vì UI:
+#
+# - URL: http://tempo.monitoring.svc.cluster.local:3200 (in-cluster HTTP API
+#   port 3200 — KHÔNG phải 4318/OTLP ingestion, KHÔNG phải NodePort).
+# - Authentication: No Authentication.
+# - Streaming: TẮT cả Search queries + Metrics queries. ⚠️ BÀI HỌC: Tempo
+#   HTTP API port 3200 trả về HTTP/1.1 (không serve HTTP/2), gRPC streaming
+#   sẽ fail với lỗi "http2: frame too large, note that the frame header
+#   looked like an HTTP/1.1 header" — tắt streaming là bắt buộc với Tempo
+#   self-host qua NodePort này.
+# - Trace to logs: Loki, shift 0/0, tag trace_id=trace_id, filter by trace ID
+#   + span ID → nhảy từ span sang dòng log rag_retrieval_output (100% payload).
+# - Trace to metrics: Prometheus, shift -2m/+2m, tag service.name=service_name,
+#   link "requests_rate" = sum(rate(rag_retrieval_requests_total[5m])).
+# datasources:
+#   datasources.yaml:
+#     apiVersion: 1
+#     datasources:
+#       - name: Tempo
+#         type: tempo
+#         uid: afy8sa3jsx88wf
+#         access: proxy
+#         isDefault: false
+#         url: http://tempo.monitoring.svc.cluster.local:3200
+#         jsonData:
+#           nodeGraph:
+#             enabled: true
+#           search:
+#             enabled: false
+#           metrics:
+#             enabled: false
+#           streaming:
+#             enabled: false
+#           traceToLogs:
+#             datasourceUid: loki
+#             spanStartTimeShift: "0"
+#             spanEndTimeShift: "0"
+#             tags:
+#               - key: trace_id
+#                 value: trace_id
+#             filterByTraceID: true
+#             filterBySpanID: true
+#           traceToMetrics:
+#             datasourceUid: prometheus
+#             spanStartTimeShift: "-2m"
+#             spanEndTimeShift: "2m"
+#             tags:
+#               - key: service.name
+#                 value: service_name
+#             queries:
+#               - name: "requests_rate"
+#                 query: "sum(rate(rag_retrieval_requests_total[5m]))"
+
 grafana.ini:
   dashboards:
     default_home_dashboard_path: /tmp/dashboards/rag-retrieval-dashboard.json
