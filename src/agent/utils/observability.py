@@ -60,6 +60,13 @@ REQUESTS_BY_HOUR_OF_DAY = Counter(
     "Retrieval requests per hour of day (Asia/Ho_Chi_Minh). Dashboard timezone MUST match.",
     ["hod"],
 )
+REQUESTS_BY_DAY_HOUR = Counter(
+    "rag_retrieval_requests_by_day_hour",
+    "Retrieval requests per day+hour combination (Asia/Ho_Chi_Minh). "
+    "Allows drilling down into a specific day's hourly pattern "
+    "(e.g. one day picker + hour-of-day bars on Grafana).",
+    ["day", "hod"],
+)
 ERRORS_TOTAL = Counter(
     "rag_retrieval_errors_total",
     "Total number of failed retrieval requests.",
@@ -93,8 +100,11 @@ def init_telemetry() -> None:
     provider = TracerProvider(resource=Resource.create({"service.name": SERVICE_NAME}))
     endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
     if endpoint:
-        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))
-        logger.info(f"OTel tracing enabled, exporting OTLP/HTTP to {endpoint}")
+        # The OTLP HTTP exporter appends /v1/traces to the endpoint. Strip a
+        # trailing /v1/traces if present to avoid a double path (404 Not Found).
+        base = endpoint.rstrip("/").removesuffix("/v1/traces")
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=base)))
+        logger.info(f"OTel tracing enabled, exporting OTLP/HTTP to {base}")
     else:
         logger.info("OTEL_EXPORTER_OTLP_ENDPOINT not set — tracing is a no-op")
     trace.set_tracer_provider(provider)
@@ -115,8 +125,11 @@ def _now_hcm() -> datetime:
 def _record_request_counters() -> None:
     REQUESTS_TOTAL.inc()
     now = _now_hcm()
-    REQUESTS_BY_DAY.labels(day=now.strftime("%Y-%m-%d")).inc()
-    REQUESTS_BY_HOUR_OF_DAY.labels(hod=now.strftime("%H")).inc()
+    day = now.strftime("%Y-%m-%d")
+    hod = now.strftime("%H")
+    REQUESTS_BY_DAY.labels(day=day).inc()
+    REQUESTS_BY_HOUR_OF_DAY.labels(hod=hod).inc()
+    REQUESTS_BY_DAY_HOUR.labels(day=day, hod=hod).inc()
 
 
 def _docs_payload(documents: list[Document]) -> list[dict[str, Any]]:

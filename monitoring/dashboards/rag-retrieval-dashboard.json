@@ -15,6 +15,128 @@
       "fieldConfig": {
         "defaults": {
           "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rag_retrieval_requests_total)",
+          "legendFormat": "Tổng request",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "Tổng request (từ trước đến nay)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rag_retrieval_requests_by_day_total{day=\"${__to:date:YYYY-MM-DD}\"})",
+          "legendFormat": "Request hôm nay",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "Request hôm nay",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
             "mode": "palette-classic"
           },
           "custom": {
@@ -67,17 +189,12 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 4
       },
       "id": 1,
       "options": {
         "legend": {
-          "calcs": [
-            "mean",
-            "max",
-            "lastNotNull"
-          ],
-          "displayMode": "table",
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -101,116 +218,50 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "continuous-GrYlRd"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
+      "id": 2,
+      "title": "Requests by Day / Hour (Asia/Ho_Chi_Minh)",
+      "type": "volkovlabs-echarts-panel",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 4
       },
-      "id": 2,
-      "options": {
-        "orientation": "auto",
-        "showValue": "auto",
-        "stacking": "off",
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "xTickLabelRotation": 0,
-        "xTickLabelSpacing": 0
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (day) (increase(rag_retrieval_requests_by_day_total[$__range]))",
-          "legendFormat": "{{day}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Requests by Day (Asia/Ho_Chi_Minh)",
-      "type": "barchart"
-    },
-    {
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "continuous-GrYlRd"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 8
-      },
-      "id": 3,
-      "options": {
-        "orientation": "auto",
-        "showValue": "auto",
-        "stacking": "off",
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "xTickLabelRotation": 0,
-        "xTickLabelSpacing": 0
-      },
       "targets": [
         {
+          "refId": "A",
+          "expr": "sum by (day) (rag_retrieval_requests_by_day_total)",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (hod) (increase(rag_retrieval_requests_by_hour_of_day_total[$__range]))",
-          "legendFormat": "hour {{hod}}",
-          "refId": "A"
+          "legendFormat": "{{day}}",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (hod) (rag_retrieval_requests_by_day_hour_total{day=\"$selected_day\"})",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "{{hod}}",
+          "instant": true,
+          "range": false
         }
       ],
-      "title": "Requests by Hour of Day (Asia/Ho_Chi_Minh)",
-      "type": "barchart"
+      "options": {
+        "editor": {
+          "format": "auto",
+          "language": "javascript"
+        },
+        "getOption": "// Requests by Day / Hour — day distribution + hourly pattern of $selected_day.\n// data[0]: query A  = sum by (day)  (all days in range)\n// data[1]: query B  = sum by (hod)  for the selected day (template var selected_day)\n// Instant queries: each labeled series is one field; field.name = legend\n// (set to {{day}} / {{hod}}), field.values = samples over the range.\nconst toPairs = (frame) => {\n  if (!frame || !frame.fields) return [];\n  return frame.fields\n    .filter((f) => f.name !== 'Time')\n    .map((f) => ({ name: f.name, value: f.values[f.values.length - 1] }))\n    .filter((p) => p.value != null && !Number.isNaN(p.value));\n};\n\nconst dayPairs = toPairs(data[0]);\nconst hodPairs = toPairs(data[1]);\n\ndayPairs.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));\nhodPairs.sort((a, b) => parseInt(a.name, 10) - parseInt(b.name, 10));\n\nreturn {\n  tooltip: { trigger: 'axis' },\n  legend: { data: ['day', 'hour'] },\n  grid: [\n    { left: 50, right: 20, top: 32, height: '34%' },\n    { left: 50, right: 20, top: '58%', bottom: 30 },\n  ],\n  xAxis: [\n    { type: 'category', name: 'day', gridIndex: 0, data: dayPairs.map((p) => p.name) },\n    { type: 'category', name: 'hour of day ($selected_day)', gridIndex: 1, data: hodPairs.map((p) => p.name) },\n  ],\n  yAxis: [\n    { type: 'value', name: 'requests', gridIndex: 0 },\n    { type: 'value', name: 'requests', gridIndex: 1 },\n  ],\n  series: [\n    { name: 'day', type: 'bar', xAxisIndex: 0, yAxisIndex: 0, data: dayPairs.map((p) => p.value), itemStyle: { color: '#73C0DE' } },\n    { name: 'hour', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: hodPairs.map((p) => p.value), itemStyle: { color: '#FAC858' } },\n  ],\n};"
+      }
     },
     {
       "datasource": {
@@ -271,18 +322,13 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 8
+        "x": 0,
+        "y": 12
       },
       "id": 4,
       "options": {
         "legend": {
-          "calcs": [
-            "mean",
-            "max",
-            "lastNotNull"
-          ],
-          "displayMode": "table",
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -320,7 +366,7 @@
           "refId": "C"
         }
       ],
-      "title": "Retrieval Latency P50/P95/P99 (keeps last value when idle)",
+      "title": "Retrieval Latency P50/P95/P99",
       "type": "timeseries"
     },
     {
@@ -385,17 +431,14 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 16
+        "w": 12,
+        "x": 12,
+        "y": 12
       },
       "id": 5,
       "options": {
         "legend": {
-          "calcs": [
-            "sum"
-          ],
-          "displayMode": "table",
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -417,76 +460,6 @@
       ],
       "title": "Error Rate",
       "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "max": 100,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 10
-              },
-              {
-                "color": "red",
-                "value": 50
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 4,
-        "x": 8,
-        "y": 16
-      },
-      "id": 6,
-      "options": {
-        "minVizHeight": 75,
-        "minVizWidth": 75,
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "sizing": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "rag_retrieval_requests_in_flight",
-          "legendFormat": "in-flight",
-          "refId": "A"
-        }
-      ],
-      "title": "Requests In-Flight",
-      "type": "gauge"
     },
     {
       "datasource": {
@@ -547,18 +520,13 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 16
+        "x": 0,
+        "y": 20
       },
       "id": 7,
       "options": {
         "legend": {
-          "calcs": [
-            "mean",
-            "max",
-            "lastNotNull"
-          ],
-          "displayMode": "table",
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -587,7 +555,7 @@
           "refId": "B"
         }
       ],
-      "title": "Docs Returned per Request (keeps last value when idle)",
+      "title": "Docs Returned per Request",
       "type": "timeseries"
     },
     {
@@ -617,8 +585,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 24
+        "x": 12,
+        "y": 20
       },
       "id": 8,
       "options": {
@@ -638,9 +606,110 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (le) (increase(rag_retrieval_docs_returned_bucket[$__range]))",
-          "legendFormat": "le={{le}}",
-          "refId": "A"
+          "expr": "sum(rag_retrieval_docs_returned_bucket{le=\"0\"})",
+          "legendFormat": "≤0",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rag_retrieval_docs_returned_bucket{le=\"1\"})",
+          "legendFormat": "≤1",
+          "refId": "B",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rag_retrieval_docs_returned_bucket{le=\"2\"})",
+          "legendFormat": "≤2",
+          "refId": "C",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rag_retrieval_docs_returned_bucket{le=\"3\"})",
+          "legendFormat": "≤3",
+          "refId": "D",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rag_retrieval_docs_returned_bucket{le=\"5\"})",
+          "legendFormat": "≤5",
+          "refId": "E",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rag_retrieval_docs_returned_bucket{le=\"8\"})",
+          "legendFormat": "≤8",
+          "refId": "F",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rag_retrieval_docs_returned_bucket{le=\"10\"})",
+          "legendFormat": "≤10",
+          "refId": "G",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rag_retrieval_docs_returned_bucket{le=\"15\"})",
+          "legendFormat": "≤15",
+          "refId": "H",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rag_retrieval_docs_returned_bucket{le=\"20\"})",
+          "legendFormat": "≤20",
+          "refId": "I",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rag_retrieval_docs_returned_bucket{le=\"+Inf\"})",
+          "legendFormat": "tổng (+Inf)",
+          "refId": "J",
+          "instant": true,
+          "range": false
         }
       ],
       "title": "Docs Returned Distribution (bucket cumulative)",
@@ -656,7 +725,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 28
       },
       "id": 9,
       "options": {},
@@ -666,10 +735,9 @@
             "type": "tempo",
             "uid": "afy8sa3jsx88wf"
           },
-          "queryType": "traceqlSearch",
-          "query": "{resource.service.name=\"rag-retrieval\"}",
+          "queryType": "search",
+          "serviceName": "rag-retrieval",
           "limit": 20,
-          "tableType": "traces",
           "refId": "A"
         }
       ],
@@ -685,16 +753,32 @@
     "observability"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "selected_day",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": "label_values(rag_retrieval_requests_by_day_total, day)",
+        "refresh": 2,
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "sort": 2
+      }
+    ]
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-7d",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "Asia/Ho_Chi_Minh",
   "title": "RAG Retrieval",
   "uid": "rag-retrieval",
-  "version": 2,
+  "version": 4,
   "weekStart": ""
 }

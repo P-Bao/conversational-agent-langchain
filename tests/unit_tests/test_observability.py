@@ -81,6 +81,10 @@ def test_wrap_retriever_sync_metrics(in_flight_zero: None) -> None:
     before_total = _value("rag_retrieval_requests_total")
     before_day = _value("rag_retrieval_requests_by_day_total", {"day": _today_hcm()})
     before_hod = _value("rag_retrieval_requests_by_hour_of_day_total", {"hod": _this_hour_hcm()})
+    before_day_hour = _value(
+        "rag_retrieval_requests_by_day_hour_total",
+        {"day": _today_hcm(), "hod": _this_hour_hcm()},
+    )
 
     result = retriever.invoke("hello world")
 
@@ -90,6 +94,10 @@ def test_wrap_retriever_sync_metrics(in_flight_zero: None) -> None:
     assert _value(
         "rag_retrieval_requests_by_hour_of_day_total", {"hod": _this_hour_hcm()}
     ) == (before_hod or 0) + 1
+    assert _value(
+        "rag_retrieval_requests_by_day_hour_total",
+        {"day": _today_hcm(), "hod": _this_hour_hcm()},
+    ) == (before_day_hour or 0) + 1
     duration_count = _value("rag_retrieval_duration_seconds_count")
     assert duration_count is not None and duration_count >= 1
     docs_count = _value("rag_retrieval_docs_returned_count")

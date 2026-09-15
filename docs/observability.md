@@ -36,6 +36,7 @@ Hai loại quan sát riêng biệt, không thay thế nhau:
 | `rag_retrieval_requests_total` | counter | Tổng số retrieval request. |
 | `rag_retrieval_requests_by_day{day="2026-09-14"}` | counter | Số request theo ngày, tính theo **Asia/Ho_Chi_Minh**. Dashboard timezone PHẢI khớp (xem lưu ý 1). |
 | `rag_retrieval_requests_by_hour_of_day{hod="14"}` | counter | Số request theo giờ trong ngày, tính theo **Asia/Ho_Chi_Minh**. |
+| `rag_retrieval_requests_by_day_hour_total{day="2026-09-14", hod="14"}` | counter | Số request theo **cặp (ngày, giờ)** — cho phép drill-down "pattern theo giờ của 1 ngày cụ thể" trên dashboard (template variable `selected_day`). |
 | `rag_retrieval_duration_seconds` | histogram | Full round-trip retrieval (kể cả bước embed query). Buckets: `[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10]` giây. |
 | `rag_retrieval_errors_total` | counter | Số request lỗi (exception khi retrieve). |
 | `rag_retrieval_requests_in_flight` | gauge | Số request đang xử lý. Tăng lúc bắt đầu, giảm trong `finally` — quay về 0 khi hết tải, không leak khi exception. |
@@ -75,11 +76,13 @@ Service name trên Tempo: `OTEL_SERVICE_NAME` (mặc định `rag-retrieval`).
 
 ## Dashboard Grafana — 2 lưu ý bắt buộc (bài học chirp3)
 
-Dashboard "RAG Retrieval" gồm 9 panels:
+Dashboard "RAG Retrieval" gồm các panels:
 
-**Prometheus** (uid `prometheus`): Request Rate, Requests by Day / by Hour of
-Day (Asia/Ho_Chi_Minh), Retrieval Latency P50/P95/P99, Error Rate, Requests
-In-Flight, Docs Returned per Request + Distribution.
+**Prometheus** (uid `prometheus`): Tổng request / Request hôm nay (stat),
+Request Rate, **Requests by Day / Hour** (ECharts panel — ngày ở bar trên,
+giờ của ngày được chọn qua biến `selected_day` ở bar dưới, dùng metric
+`rag_retrieval_requests_by_day_hour_total{day, hod}`), Retrieval Latency
+P50/P95/P99, Error Rate, Docs Returned per Request + Distribution.
 
 **Tempo** (uid `afy8sa3jsx88wf`): panel "Recent Traces" — danh sách 20 trace
 gần nhất qua TraceQL `{resource.service.name="rag-retrieval"}`; click vào 1
@@ -89,10 +92,14 @@ metrics" (`requests_rate`) đã cấu hình ở data source Tempo.
 ### 1. Timezone cố định, không để `browser`
 
 Dashboard đặt `"timezone": "Asia/Ho_Chi_Minh"` ở cấp dashboard. Backend ghi
-label `day`/`hod` theo cùng múi giờ đó. Nếu để `"browser"`, biến
-`${__to:date:YYYY-MM-DD}` tính theo giờ trình duyệt người xem, trong khi
+label `day`/`hod` theo cùng múi giờ đó. Nếu để `"browser"`, biến `${__to:date:YYYY-MM-DD}` tính theo giờ trình duyệt người xem, trong khi
 backend ghi theo giờ Việt Nam — hai bên lệch nhau, panel kiểu "hôm nay" luôn
 trả 0 cho người xem ở timezone khác (lỗi đã gặp ở dashboard chirp3).
+
+⚠️ Panel "Request hôm nay" dùng chính `${__to:date:YYYY-MM-DD}` — CHỈ an toàn
+vì dashboard đang fix timezone `Asia/Ho_Chi_Minh` (plugin compute theo múi giờ
+dashboard, không theo browser). KHÔNG đổi timezone dashboard về `browser` —
+panel này sẽ lỗi giống chirp3 ngay lập tức.
 
 Ngoài ra, dashboard tránh dùng biến ngày `${__to:date}` — panel Requests by
 Day / by Hour of Day dùng `increase(...[$__range])` group theo label thay vì
