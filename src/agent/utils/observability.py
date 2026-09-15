@@ -103,7 +103,15 @@ def init_telemetry() -> None:
         # The OTLP HTTP exporter appends /v1/traces to the endpoint. Strip a
         # trailing /v1/traces if present to avoid a double path (404 Not Found).
         base = endpoint.rstrip("/").removesuffix("/v1/traces")
-        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=base)))
+        exporter = OTLPSpanExporter(endpoint=base)
+        # The exporter's requests.Session honors HTTP_PROXY/http_proxy env
+        # vars (trust_env=True) and routes the export through a corporate
+        # proxy, which returns 404 for host.docker.internal/NodePort targets.
+        # Tempo is always reachable directly from inside the cluster network.
+        session = getattr(exporter, "_session", None)
+        if session is not None:
+            session.trust_env = False
+        provider.add_span_processor(BatchSpanProcessor(exporter))
         logger.info(f"OTel tracing enabled, exporting OTLP/HTTP to {base}")
     else:
         logger.info("OTEL_EXPORTER_OTLP_ENDPOINT not set — tracing is a no-op")
