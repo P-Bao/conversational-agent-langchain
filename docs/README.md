@@ -47,6 +47,7 @@
 | [OPERATIONS.md](OPERATIONS.md) | SRE / On-call | Runbook: start/stop/logs/backup/health-check/capacity |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Engineer, SRE | Diagnostic checklist cho các lỗi thường gặp |
 | [SECURITY.md](SECURITY.md) | Security, Ops | Secret management, network exposure, dependency security |
+| [observability.md](observability.md) | SRE, Engineer | Metrics Prometheus + tracing OTel→Tempo: kiến trúc, dashboard, ServiceMonitor |
 
 ### Bàn Giao
 
@@ -61,6 +62,7 @@
 |---|---|
 | "API bị 500, không start được" | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) #1 |
 | "Muốn xem health của API & Qdrant" | [OPERATIONS.md](OPERATIONS.md) §6 (health check) |
+| "Dashboard Grafana no data / xem trace 1 request" | [observability.md](observability.md) |
 | "Scores retrieval có tốt không?" | [EVALUATION.md](EVALUATION.md) |
 | "Muốn thay embedding model" | [CONFIGURATION.md](CONFIGURATION.md) §1 + [DEVELOPMENT.md](DEVELOPMENT.md) §4 |
 | "Deploy lên Docker" | [DEPLOYMENT.md](DEPLOYMENT.md) |

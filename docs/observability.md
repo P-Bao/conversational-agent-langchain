@@ -66,13 +66,25 @@ Service name trên Tempo: `OTEL_SERVICE_NAME` (mặc định `rag-retrieval`).
 ### Tra cứu 1 request cụ thể
 
 1. Lấy `trace_id` từ log ứng dụng (dòng `rag_retrieval_output`).
-2. Mở **Tempo** trong Grafana, tìm theo `trace_id`.
+2. Mở **Tempo** trong Grafana, tìm theo `trace_id` — hoặc mở dashboard
+   "RAG Retrieval" → panel **Recent Traces** → click 1 trace.
 3. Xem span `rag.retrieval`: attributes `input.query`, `input.top_k`; event
    `retrieval.output` chứa danh sách documents.
 4. Nếu nội dung bị cắt (docs dài): tìm dòng log `rag_retrieval_output` có
    cùng `trace_id` trong Loki — ở đó có 100% payload.
 
 ## Dashboard Grafana — 2 lưu ý bắt buộc (bài học chirp3)
+
+Dashboard "RAG Retrieval" gồm 9 panels:
+
+**Prometheus** (uid `prometheus`): Request Rate, Requests by Day / by Hour of
+Day (Asia/Ho_Chi_Minh), Retrieval Latency P50/P95/P99, Error Rate, Requests
+In-Flight, Docs Returned per Request + Distribution.
+
+**Tempo** (uid `afy8sa3jsx88wf`): panel "Recent Traces" — danh sách 20 trace
+gần nhất qua TraceQL `{resource.service.name="rag-retrieval"}`; click vào 1
+trace để xem span `rag.retrieval` (input/output đầy đủ) và tab "Related
+metrics" (`requests_rate`) đã cấu hình ở data source Tempo.
 
 ### 1. Timezone cố định, không để `browser`
 
@@ -115,10 +127,27 @@ dữ liệu).
 
 ## Deploy dashboard
 
+Dashboard "RAG Retrieval" pin cứng Prometheus datasource bằng UID
+(`"uid": "prometheus"` — mặc định của kube-prometheus-stack provisioned
+datasource; xác nhận UID thật trên UI Grafana nếu khác) — mở dashboard là
+chạy ngay, không phải chọn datasource.
+
 Xem [`monitoring/README.md`](../monitoring/README.md):
 - `make dashboard-configmap` — sinh ConfigMap từ dashboard JSON, gắn label
   `grafana_dashboard=1` cho sidecar tự nhận.
 - `make dashboard-apply` — apply ConfigMap + ServiceMonitor lên cluster.
+
+⚠️ **Service chạy Docker (không phải k8s)**: ServiceMonitor chỉ scrape Service
+trong k8s — nếu service chạy ở Docker trên server, dùng **pattern chirp3**
+(`monitoring/k8s/rag-retrieval-metrics-scrape.yaml`): k8s Service không
+selector + Endpoints trỏ thẳng IP host (`__NODE_IP__`) + ServiceMonitor,
+apply bằng `make metrics-scrape-apply`. Chỉ cần `kubectl apply`, không đụng
+release kube-prometheus-stack. Xóa static scrape khi service đã deploy lên k8s.
+
+Tempo datasource (đã cấu hình thành công qua UI, uid `afy8sa3jsx88wf`): URL
+`http://tempo.monitoring.svc.cluster.local:3200`, streaming TẮT (Tempo HTTP
+API trả HTTP/1.1, gRPC streaming fail), trace-to-logs → Loki filter
+`trace_id`, trace-to-metrics → Prometheus link `requests_rate`.
 
 ## Cấu hình env
 

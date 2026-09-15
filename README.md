@@ -137,7 +137,9 @@ Cấu hình dashboard/ServiceMonitor tại [`monitoring/README.md`](monitoring/R
   full payload cũng được ghi vào structured log kèm `trace_id` để join
   Tempo ↔ Loki trong Grafana.
 - **Dashboard "RAG Retrieval"**: timezone cố định `Asia/Ho_Chi_Minh`; latency
-  panel P50/P95/P99 dùng `last_over_time()` để giữ giá trị cũ khi idle.
+  panel P50/P95/P99 dùng `last_over_time()` để giữ giá trị cũ khi idle; panel
+  **Recent Traces** (Tempo) liệt kê trace gần nhất — click vào 1 trace để xem
+  span `rag.retrieval` (query nguyên văn + full docs) và "Related metrics".
 
 ### Chạy local (docker-compose)
 
@@ -157,6 +159,8 @@ docker-compose local chỉ dùng để dev/test.
 
 ```bash
 make dashboard-apply     # tạo ConfigMap dashboard + apply ServiceMonitor lên cluster
+make metrics-scrape-apply  # nếu service chạy Docker trên host (chưa deploy k8s):
+                           # điền __NODE_IP__ trong monitoring/k8s/rag-retrieval-metrics-scrape.yaml trước
 ```
 
 Sau vài phút, dashboard "RAG Retrieval" tự xuất hiện trong Grafana trung tâm
