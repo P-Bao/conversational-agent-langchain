@@ -100,10 +100,14 @@ def init_telemetry() -> None:
     provider = TracerProvider(resource=Resource.create({"service.name": SERVICE_NAME}))
     endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
     if endpoint:
-        # The OTLP HTTP exporter appends /v1/traces to the endpoint. Strip a
-        # trailing /v1/traces if present to avoid a double path (404 Not Found).
+        # ⚠️ BÀI HỌC: when the ``endpoint`` constructor arg is passed, the OTLP
+        # HTTP exporter uses it VERBATIM (v1.44+). It only appends /v1/traces
+        # when reading OTEL_EXPORTER_OTLP_ENDPOINT from the environment itself.
+        # Normalize here and pass the full URL with the trace path, otherwise
+        # the export POSTs to the bare base URL and Tempo returns 404.
         base = endpoint.rstrip("/").removesuffix("/v1/traces")
-        exporter = OTLPSpanExporter(endpoint=base)
+        url = f"{base}/v1/traces"
+        exporter = OTLPSpanExporter(endpoint=url)
         # The exporter's requests.Session honors HTTP_PROXY/http_proxy env
         # vars (trust_env=True) and routes the export through a corporate
         # proxy, which returns 404 for host.docker.internal/NodePort targets.
@@ -112,7 +116,7 @@ def init_telemetry() -> None:
         if session is not None:
             session.trust_env = False
         provider.add_span_processor(BatchSpanProcessor(exporter))
-        logger.info(f"OTel tracing enabled, exporting OTLP/HTTP to {base}")
+        logger.info(f"OTel tracing enabled, exporting OTLP/HTTP to {url}")
     else:
         logger.info("OTEL_EXPORTER_OTLP_ENDPOINT not set — tracing is a no-op")
     trace.set_tracer_provider(provider)

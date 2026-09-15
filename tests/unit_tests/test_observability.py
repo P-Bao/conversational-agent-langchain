@@ -221,3 +221,23 @@ def test_init_telemetry_no_endpoint_noop(monkeypatch: pytest.MonkeyPatch) -> Non
     with patch("agent.utils.observability.OTLPSpanExporter") as mock_exporter:
         observability.init_telemetry()
     mock_exporter.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("http://host.docker.internal:30749", "http://host.docker.internal:30749/v1/traces"),
+        ("http://host.docker.internal:30749/", "http://host.docker.internal:30749/v1/traces"),
+        (
+            "http://host.docker.internal:30749/v1/traces",
+            "http://host.docker.internal:30749/v1/traces",
+        ),
+    ],
+)
+def test_init_telemetry_passes_full_trace_url(
+    monkeypatch: pytest.MonkeyPatch, raw: str, expected: str
+) -> None:
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", raw)
+    with patch("agent.utils.observability.OTLPSpanExporter") as mock_exporter:
+        observability.init_telemetry()
+    mock_exporter.assert_called_once_with(endpoint=expected)
