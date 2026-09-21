@@ -338,7 +338,7 @@
                       "kind": "DataQuery",
                       "spec": {
                         "limit": 50,
-                        "query": "{resource.service.name=\"rag-retrieval\"} | select(span.input.query, event.documents_json)",
+                        "query": "{resource.service.name=\"rag-retrieval\"} | select(trace:id, span.input.query, event.documents_json)",
                         "queryType": "traceql",
                         "tableType": "spans"
                       },
@@ -358,7 +358,6 @@
                       "excludeByName": {
                         "Trace Service": true,
                         "Trace Name": true,
-                        "Span ID": true,
                         "service.name": true,
                         "resource.service.name": true,
                         "nested": true,
@@ -368,13 +367,15 @@
                       },
                       "includeByName": {},
                       "indexByName": {
-                        "Trace ID": 0,
-                        "Start time": 1,
-                        "input.query": 2,
-                        "documents_json": 3,
-                        "Duration": 4
+                        "Span ID": 0,
+                        "trace:id": 1,
+                        "Start time": 2,
+                        "input.query": 3,
+                        "documents_json": 4,
+                        "Duration": 5
                       },
                       "renameByName": {
+                        "trace:id": "Trace ID",
                         "input.query": "Input",
                         "documents_json": "Output"
                       }
@@ -422,6 +423,22 @@
                   {
                     "matcher": {
                       "id": "byName",
+                      "options": "Span ID"
+                    },
+                    "properties": [
+                      {
+                        "id": "custom.minWidth",
+                        "value": 120
+                      },
+                      {
+                        "id": "custom.maxWidth",
+                        "value": 160
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
                       "options": "Trace ID"
                     },
                     "properties": [
@@ -439,11 +456,15 @@
                     "properties": [
                       {
                         "id": "custom.minWidth",
-                        "value": 140
+                        "value": 110
                       },
                       {
                         "id": "custom.maxWidth",
-                        "value": 180
+                        "value": 150
+                      },
+                      {
+                        "id": "unit",
+                        "value": "dateTimeAsLocal"
                       }
                     ]
                   },
