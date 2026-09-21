@@ -124,10 +124,35 @@ def init_telemetry() -> None:
 
 tracer = trace.get_tracer("rag-retrieval")
 
-# Payload safety: span attributes may be truncated by OTel backends. Keep the
-# full document payload in the structured log (joined by trace_id) and only
-# put a safely truncated snapshot into the span event.
-_MAX_EVENT_ATTR_CHARS = 8000
+# Payload safety: the OTel SDK silently TRUNCATES span/event attribute values
+# much longer than a backend's limit (Tempo default max_attr_value_len = 0/unlimited
+# on recent versions, but many deployments set 2048 chars). The FULL document
+# payload is always written to the structured log (joined by trace_id) regardless
+# of this limit. The span event now also carries the full JSON unless it exceeds
+# ``TRACE_OUTPUT_MAX_LEN`` — a safety net against the ~4MB OTLP/gRPC request
+# limit, NOT a display limit. With the top_k=40 payloads seen in production
+# (tens of KB), the default below never truncates.
+#   - env ``TRACE_OUTPUT_MAX_LEN``: char limit for the ``documents_json`` event
+#     attribute; sensible default of 2_000_000 chars (~2MB, safe margin below
+#     the ~4MB OTLP request limit); set to 0 to disable truncation entirely.
+_DEFAULT_MAX_EVENT_ATTR_CHARS = 2_000_000
+
+
+def _parse_max_event_attr_chars() -> int:
+    raw = os.environ.get("TRACE_OUTPUT_MAX_LEN", "").strip()
+    if not raw:
+        return _DEFAULT_MAX_EVENT_ATTR_CHARS
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(
+            f"Invalid TRACE_OUTPUT_MAX_LEN={raw!r}; "
+            f"falling back to {_DEFAULT_MAX_EVENT_ATTR_CHARS}"
+        )
+        return _DEFAULT_MAX_EVENT_ATTR_CHARS
+
+
+_MAX_EVENT_ATTR_CHARS = _parse_max_event_attr_chars()
 
 
 def _now_hcm() -> datetime:
@@ -155,14 +180,20 @@ def _docs_payload(documents: list[Document]) -> list[dict[str, Any]]:
     ]
 
 
-def _truncate_documents_json(payload: list[dict[str, Any]]) -> str:
-    """Serialize the document payload keeping valid JSON under the size limit.
+def _truncate_documents_json(
+    payload: list[dict[str, Any]], max_chars: int | None = None
+) -> str:
+    """Serialize the document payload, keeping valid JSON if it exceeds the limit.
 
-    Shrinks ``page_content`` progressively (per-doc) instead of slicing the
-    JSON string mid-token, so the attribute always parses.
+    Returns the FULL JSON whenever it fits (the common case: with the default
+    2MB limit, real top_k=40 payloads are never truncated) or when the limit is
+    disabled (``<= 0``). Only beyond the limit, shrinks ``page_content``
+    progressively (per-doc) instead of slicing the JSON string mid-token, so
+    the attribute still parses.
     """
+    limit = _MAX_EVENT_ATTR_CHARS if max_chars is None else max_chars
     docs_json = json.dumps(payload, ensure_ascii=False)
-    if len(docs_json) <= _MAX_EVENT_ATTR_CHARS:
+    if limit <= 0 or len(docs_json) <= limit:
         return docs_json
     for per_doc in (2000, 1000, 500, 200, 100):
         shrunk = [
@@ -175,7 +206,7 @@ def _truncate_documents_json(payload: list[dict[str, Any]]) -> str:
             for doc in payload
         ]
         docs_json = json.dumps(shrunk, ensure_ascii=False)
-        if len(docs_json) <= _MAX_EVENT_ATTR_CHARS:
+        if len(docs_json) <= limit:
             return docs_json
     # Final fallback: only the first doc, heavily truncated.
     first = payload[0]

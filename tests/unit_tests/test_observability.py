@@ -195,10 +195,39 @@ def test_config_exposes_search_kwargs() -> None:
     assert wrapped.config == {"k": 7}
 
 
+def test_docs_payload_not_truncated_by_default(
+    monkeypatch: pytest.MonkeyPatch, in_flight_zero: None
+) -> None:
+    """Default limit (2MB) must keep real-sized payloads fully intact."""
+    exporter = _patch_tracer(monkeypatch)
+    big_docs = [
+        Document(page_content="x" * 5000 * (i % 4 + 1), metadata={"i": i})
+        for i in range(10)
+    ]
+    retriever = wrap_retriever(_StubRetriever(docs=big_docs))
+
+    retriever.invoke("big")
+
+    span = exporter.get_finished_spans()[0]
+    event = next(e for e in span.events if e.name == "retrieval.output")
+    assert event.attributes is not None
+    docs_json = event.attributes["documents_json"]
+    assert isinstance(docs_json, str)
+    assert "...[truncated]" not in docs_json
+    payload = json.loads(docs_json)
+    assert len(payload) == 10
+    for i, item in enumerate(payload):
+        assert item["page_content"] == "x" * 5000 * (i % 4 + 1)
+        assert item["metadata"] == {"i": i}
+
+
 def test_docs_payload_truncated_in_event(
     monkeypatch: pytest.MonkeyPatch, in_flight_zero: None
 ) -> None:
+    """Safety net: when the payload exceeds the configured limit (e.g. it would
+    blow past the ~4MB OTLP request limit), the event stays under the limit."""
     exporter = _patch_tracer(monkeypatch)
+    monkeypatch.setattr(observability, "_MAX_EVENT_ATTR_CHARS", 8000)
     big_docs = [Document(page_content="x" * 5000, metadata={"i": i}) for i in range(10)]
     retriever = wrap_retriever(_StubRetriever(docs=big_docs))
 
@@ -214,6 +243,27 @@ def test_docs_payload_truncated_in_event(
     assert payload[0]["page_content"].endswith("...[truncated]")
     assert len(payload[0]["page_content"]) < 5000
     assert payload[0]["metadata"] == {"i": 0}
+
+
+def test_docs_payload_truncation_disabled_with_zero_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TRACE_OUTPUT_MAX_LEN=0 disables truncation entirely (no safety net)."""
+    payload = [{"page_content": "y" * 5000, "metadata": {}, "score": None}] * 10
+    docs_json = observability._truncate_documents_json(payload, max_chars=0)
+    assert "...[truncated]" not in docs_json
+    assert len(json.loads(docs_json)) == 10
+
+
+def test_parse_max_event_attr_chars(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TRACE_OUTPUT_MAX_LEN", raising=False)
+    assert observability._parse_max_event_attr_chars() == 2_000_000
+    monkeypatch.setenv("TRACE_OUTPUT_MAX_LEN", "12345")
+    assert observability._parse_max_event_attr_chars() == 12345
+    monkeypatch.setenv("TRACE_OUTPUT_MAX_LEN", "0")
+    assert observability._parse_max_event_attr_chars() == 0
+    monkeypatch.setenv("TRACE_OUTPUT_MAX_LEN", "not-a-number")
+    assert observability._parse_max_event_attr_chars() == 2_000_000
 
 
 def test_init_telemetry_no_endpoint_noop(monkeypatch: pytest.MonkeyPatch) -> None:
