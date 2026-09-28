@@ -95,7 +95,17 @@ Response:
 > trong request body. Nếu cần bật/tắt runtime, sửa trực tiếp
 > `tests/test_rag_deepeval_qwen.py::QwenEvalLLM.generate`.
 
-## 7. Tổng hợp default `RERANK_PROVIDER` theo use case
+## 7. Observability (OpenTelemetry Tracing & Metrics)
+
+| Biến | Default | Mô tả |
+|---|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `""` | Endpoint OTLP/HTTP của Tempo / OTel Collector trong cluster (NodePort 4318, KHÔNG phải 3200 HTTP query hay 4317 gRPC). Code tự động chuẩn hóa nối `/v1/traces` và tắt proxy `HTTP_PROXY`. Để trống = tắt tracing. |
+| `OTEL_SERVICE_NAME` | `rag-retrieval` | Service name xuất hiện trên Tempo / Grafana. |
+| `TRACE_OUTPUT_MAX_LEN` | `2000000` | Giới hạn độ dài ký tự của `documents_json` trong span event (~2MB, dưới trần ~4MB của OTLP request). Đặt `<= 0` để tắt hoàn toàn truncation. Với payload `top_k=40` thực tế (~vài chục KB), documents luôn giữ trọn vẹn 100%. |
+
+> Chi tiết kiến trúc tracing & metrics, PromQL, Grafana dashboard: xem [observability.md](observability.md).
+
+## 8. Tổng hợp default `RERANK_PROVIDER` theo use case
 
 | Use case | `RERANK_PROVIDER` | Trade-off |
 |---|---|---|
@@ -103,14 +113,14 @@ Response:
 | Smoke test nhanh, không cần precision | `none` | Passthrough `docs[:top_k]`; container API nhẹ nhất |
 | Self-host rerank trong cùng container (cần GPU) | `bge` | Local FlagEmbedding; tăng precision, nhưng tốn ~2.2GB RAM + GPU |
 
-## 8. Migration / Chunking (LOẠI BỎ ở v7)
+## 9. Migration / Chunking (LOẠI BỎ ở v7)
 
 Các biến `INPUT_DIR`, `MIGRATE_*`, `CHUNK_*`, `ENABLE_LLM_ENRICH`, `LLM_*`,
 `BACKEND_HOST`, `BACKEND_PORT`, `EVAL_RPM`, `EVAL_TPM`, `REC` đã bị loại bỏ
 trong `template.env`. Migration scripts và ingestion logic thuộc về repo hệ
 thống ngoài quản lý Qdrant.
 
-## 9. Backward-compat Aliases (giữ backward-compat cho `.env` cũ)
+## 10. Backward-compat Aliases (giữ backward-compat cho `.env` cũ)
 
 `Config` vẫn nhận các alias cũ để tránh break `.env` legacy trong qúa trình
 upgrade:
@@ -133,7 +143,7 @@ Các biến đã bị **xoá hoàn toàn** ở v7 (không còn backward-compat):
 `QWEN_EVAL_THINKING`, `EVAL_RPM`, `EVAL_TPM`, `BACKEND_*`,
 `RECREATE_COLLECTION`, `EMBEDDING_API_KEY`.
 
-## 10. Model Config Reference
+## 11. Model Config Reference
 
 | Model | HuggingFace ID | Loại | dim | Chạy ở đâu |
 |---|---|---|---|---|

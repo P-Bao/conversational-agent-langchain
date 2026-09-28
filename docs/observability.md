@@ -22,8 +22,11 @@ Hai loại quan sát riêng biệt, không thay thế nhau:
 ```
 
 - Trace được export qua OTel SDK (OTLP/HTTP) tới Tempo / OTel Collector trong
-  cluster k8s — endpoint cấu hình qua `OTEL_EXPORTER_OTLP_ENDPOINT`. Không set
-  endpoint → tracing là no-op (local dev không cần backend).
+  cluster k8s — endpoint cấu hình qua `OTEL_EXPORTER_OTLP_ENDPOINT`. Exporter tự
+  động chuẩn hóa URL (bổ sung path `/v1/traces` nếu chưa có) và vô hiệu hóa proxy
+  kế thừa từ môi trường (`session.trust_env = False`) để tránh lỗi 404 khi kết nối
+  nội bộ (`host.docker.internal` / NodePort). Không set endpoint → tracing là
+  no-op (local dev không cần backend).
 - Metrics được scrape tại `GET /metrics` (prometheus_client).
 - Code: `src/agent/utils/observability.py` — `TracedRetriever` bọc retriever
   LangChain, nên **cả 3 entry point** (`POST /rag/`, `POST /rag/stream`,
@@ -55,12 +58,17 @@ Mỗi retrieval tạo đúng **1 span** tên `rag.retrieval` với:
   - `input.top_k` — tham số `k` của retriever
 - **Output (toàn bộ danh sách document, không chỉ số lượng)**:
   - `output.num_docs` — số lượng doc (attribute)
-  - Span event `retrieval.output` chứa JSON `[{"page_content", "metadata", "score"}, ...]`
-    (cắt an toàn ở 8000 ký tự để tránh silent truncation của span attribute)
-- **Full payload qua structured log**: loguru ghi dòng
-  `rag_retrieval_output` với `trace_id`, `span_id` và **đầy đủ** danh sách
-  documents. Join Tempo ↔ Loki bằng `trace_id` trong Grafana
-  (trace-to-logs) khi cần xem 100% nội dung.
+  - Span event `retrieval.output` chứa JSON `[{"page_content", "metadata", "score"}, ...]`.
+    Mặc định chứa **100% JSON đầy đủ** lên tới `TRACE_OUTPUT_MAX_LEN` ký tự
+    (mặc định `2_000_000` chars ~2MB, an toàn dưới ngưỡng request ~4MB của OTLP;
+    đặt `<= 0` để tắt hoàn toàn giới hạn). Với payload `top_k=40` trong thực tế
+    (vài chục KB), payload luôn nguyên vẹn và không bao giờ bị cắt. Chỉ khi vượt
+    quá giới hạn an toàn này, hàm rút gọn mới co ngắn dần `page_content` từng
+    document (2000 -> 1000 -> 500 -> 200 -> 100 ký tự) mà vẫn bảo đảm JSON hợp lệ.
+- **Full payload qua structured log**: loguru luôn ghi dòng
+  `rag_retrieval_output` với `trace_id`, `span_id` và **100% đầy đủ** danh sách
+  documents (không phụ thuộc vào bất kỳ giới hạn span nào). Join Tempo ↔ Loki bằng
+  `trace_id` trong Grafana (trace-to-logs) khi cần đối chiếu.
 
 Service name trên Tempo: `OTEL_SERVICE_NAME` (mặc định `rag-retrieval`).
 
@@ -84,10 +92,13 @@ giờ của ngày được chọn qua biến `selected_day` ở bar dưới, dù
 `rag_retrieval_requests_by_day_hour_total{day, hod}`), Retrieval Latency
 P50/P95/P99, Error Rate, Docs Returned per Request + Distribution.
 
-**Tempo** (uid `afy8sa3jsx88wf`): panel "Recent Traces" — danh sách 20 trace
-gần nhất qua TraceQL `{resource.service.name="rag-retrieval"}`; click vào 1
-trace để xem span `rag.retrieval` (input/output đầy đủ) và tab "Related
-metrics" (`requests_rate`) đã cấu hình ở data source Tempo.
+**Tempo** (uid `afy8sa3jsx88wf`): panel "Recent Traces" — danh sách 50 trace
+gần nhất qua TraceQL `{resource.service.name="rag-retrieval"} | select(trace:id, span.input.query, event.documents_json)`.
+Bảng hiển thị các cột: `Span ID` (width 120-160px), `Trace ID` (width 110-150px,
+alias từ `trace:id`), `Start time` (múi giờ local `dateTimeAsLocal`), `Input`
+(prompt gốc `span.input.query`), `Output` (`documents_json`), và `Duration`.
+Click vào 1 trace để xem span `rag.retrieval` (input/output đầy đủ) và tab
+"Related metrics" (`requests_rate`) đã cấu hình ở data source Tempo.
 
 ### 1. Timezone cố định, không để `browser`
 
@@ -140,8 +151,8 @@ datasource; xác nhận UID thật trên UI Grafana nếu khác) — mở dashbo
 chạy ngay, không phải chọn datasource.
 
 Xem [`monitoring/README.md`](../monitoring/README.md):
-- `make dashboard-configmap` — sinh ConfigMap từ dashboard JSON, gắn label
-  `grafana_dashboard=1` cho sidecar tự nhận.
+- `make dashboard-configmap` — sinh ConfigMap từ dashboard JSON (`monitoring/helm/dashboard-configmap.generated.yaml`),
+  gắn label `grafana_dashboard=1` cho sidecar tự nhận.
 - `make dashboard-apply` — apply ConfigMap + ServiceMonitor lên cluster.
 
 ⚠️ **Service chạy Docker (không phải k8s)**: ServiceMonitor chỉ scrape Service
@@ -160,5 +171,6 @@ API trả HTTP/1.1, gRPC streaming fail), trace-to-logs → Loki filter
 
 | Biến | Mặc định | Ý nghĩa |
 |---|---|---|
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | (trống) | Endpoint OTLP/HTTP của Tempo / OTel Collector trong cluster. Trống = tắt tracing. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | (trống) | Endpoint OTLP/HTTP của Tempo / OTel Collector trong cluster (NodePort 4318 hoặc k8s Service). Code tự động chuẩn hóa nối path `/v1/traces` và tắt proxy `HTTP_PROXY`. Trống = tắt tracing. |
 | `OTEL_SERVICE_NAME` | `rag-retrieval` | Service name trên Tempo/Grafana. |
+| `TRACE_OUTPUT_MAX_LEN` | `2000000` | Giới hạn độ dài ký tự của `documents_json` trong span event (`retrieval.output`). Mặc định 2MB (biên an toàn dưới trần ~4MB của OTLP request). Đặt `<= 0` để tắt hoàn toàn truncation. |

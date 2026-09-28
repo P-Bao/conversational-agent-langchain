@@ -65,6 +65,7 @@ JSON: RetrievalResponse(query, documents[])
 - `retriever.py` — Hybrid retriever wrapper (dense + sparse fusion), cache `QdrantVectorStore` theo `collection_name`.
 - `reranker.py` — `get_reranker(cfg, *, top_k=...)` với 3 providers: `none` (passthrough), `remote` (HTTP `POST /rerank` tới `RERANK_BASE_URL`), `bge` (local FlagEmbedding, fallback). Default `remote`. Xem `reranker.py:62`.
 - `vdb.py` — Chỉ `QdrantClient` + `AsyncQdrantClient` singleton. CRUD collection / embed / init vdb đã chuyển sang hệ ngoài.
+- `observability.py` — `TracedRetriever` bọc retriever, instrument tự động metrics Prometheus (requests, latency, in-flight, docs count, errors) và OpenTelemetry tracing (`rag.retrieval` span + event `retrieval.output`, export OTLP/HTTP tới Tempo). Chi tiết xem [observability.md](observability.md).
 
 ## 3. Data Flow Chi Tiết
 

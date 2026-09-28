@@ -23,7 +23,8 @@ conversational-agent-langchain/
 │       ├── embeddings.py           # Remote BGE-m3 dense+sparse (HTTP) — BGEM3RemoteEmbeddings
 │       ├── vdb.py                  # Qdrant client (sync + async) — No collection mgmt
 │       ├── retriever.py            # Hybrid retriever (dense + sparse fusion)
-│       └── reranker.py             # get_reranker(cfg, *, top_k) — providers: none / remote / bge
+│       ├── reranker.py             # get_reranker(cfg, *, top_k) — providers: none / remote / bge
+│       └── observability.py        # TracedRetriever, OpenTelemetry tracing + Prometheus metrics
 ├── tests/
 │   ├── conftest.py
 │   ├── unit_tests/
@@ -33,10 +34,14 @@ conversational-agent-langchain/
 │   ├── test_integration.py
 │   ├── test_stream.py
 │   └── test_rag_deepeval_qwen.py
+├── monitoring/                     # Cấu hình Monitoring & Observability
+│   ├── dashboards/                 # rag-retrieval-dashboard.json (Grafana dashboard)
+│   ├── helm/                       # grafana-values.yaml, servicemonitor.yaml, dashboard-configmap.generated.yaml
+│   └── k8s/                        # rag-retrieval-metrics-scrape.yaml (scrape metrics cho Docker host)
 ├── ConvAgentBruno/                 # Bruno API test collection (chi giữ RAG + Search)
 │   ├── RAG/{Chat,Stream}.bru
 │   └── Search/Search.bru
-├── docs/                           # Tai lieu (ban giao v7.0.0)
+├── docs/                           # Tai lieu ban giao
 ├── .env                            # Secrets (gitignored)
 ├── template.env                    # Mau env
 ├── docker-compose.yml              # API service

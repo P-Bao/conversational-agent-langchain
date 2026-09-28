@@ -46,6 +46,7 @@ Các test file trong `tests/unit_tests/` (v8.1.0):
 | `test_config.py` | Pydantic `Config` defaults (`embedding_provider=remote`, `embedding_base_url=""`, `rerank_provider=remote`, `rerank_base_url=""`, qdrant, retrieval, rerank) |
 | `test_embeddings_bge.py` | `BGEM3RemoteEmbeddings` wrapper (test qua mocked httpx, không load model thật) |
 | `test_health.py` | `/healthz` + `/readyz` (collection_exists + error branches) |
+| `test_observability.py` | Prometheus metrics (`requests_total`, `by_day_total`, `by_hour_of_day_total`, `by_day_hour_total`, `duration_seconds`, `in_flight`, `errors_total`, `docs_returned`), OTel tracing span/event, document payload truncation (`TRACE_OUTPUT_MAX_LEN`), OTLP endpoint URL normalization |
 
 > `test_search.py` hiện không chạy được (import `tests.fakes.rag` fail pre-existing) — bỏ qua khi chạy.
 
